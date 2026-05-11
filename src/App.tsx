@@ -1,0 +1,80 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { Suspense, lazy } from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "@/context/AuthContext";
+import { Layout } from "@/components/Layout";
+import ScrollToTop from "@/components/ScrollToTop";
+import Home from "@/pages/Home";
+import Shop from "@/pages/Shop";
+import Blogs from "@/pages/Blogs";
+import BlogPost from "@/pages/BlogPost";
+import About from "@/pages/About";
+import Contact from "@/pages/Contact";
+import FAQ from "@/pages/FAQ";
+import Admin from "@/pages/Admin";
+import Checkout from "@/pages/Checkout";
+import Success from "@/pages/Success";
+import ScanMe from "@/pages/ScanMe";
+
+// Lazy load pages for performance
+const ProductDetail = lazy(() => import("@/pages/ProductDetail"));
+const HowWeWork = lazy(() => import("@/pages/HowWeWork"));
+const Recipes = lazy(() => import("@/pages/Recipes"));
+const HoneyMap = lazy(() => import("@/pages/HoneyMap"));
+const HealthCalculator = lazy(() => import("@/pages/HealthCalculator"));
+const Compare = lazy(() => import("@/pages/Compare"));
+const GiftCards = lazy(() => import("@/pages/GiftCards"));
+const Referral = lazy(() => import("@/pages/Referral"));
+const Wishlist = lazy(() => import("@/pages/Wishlist"));
+const TrackOrder = lazy(() => import("@/pages/TrackOrder"));
+
+// Loading fallback component
+const PageLoader = () => (
+  <div className="min-h-[60vh] flex items-center justify-center bg-[#FAFAFA] dark:bg-[#0A1F0B]">
+    <div className="flex flex-col items-center gap-4">
+      <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-[#3A8E3C]"></div>
+      <p className="text-xs text-[#6B9E6E] uppercase tracking-widest font-inter">Loading...</p>
+    </div>
+  </div>
+);
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <ScrollToTop />
+        <Layout>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/shop" element={<Shop />} />
+              <Route path="/product/:id" element={<ProductDetail />} />
+              <Route path="/how-we-work" element={<HowWeWork />} />
+              <Route path="/blogs" element={<Blogs />} />
+              <Route path="/blog/:id" element={<BlogPost />} />
+              <Route path="/about" element={<About />} />
+              <Route path="/contact" element={<Contact />} />
+              <Route path="/faq" element={<FAQ />} />
+              <Route path="/recipes" element={<Recipes />} />
+              <Route path="/honey-map" element={<HoneyMap />} />
+              <Route path="/health-calculator" element={<HealthCalculator />} />
+              <Route path="/compare" element={<Compare />} />
+              <Route path="/gift-cards" element={<GiftCards />} />
+              <Route path="/referral" element={<Referral />} />
+              <Route path="/admin" element={<Admin />} />
+              <Route path="/checkout" element={<Checkout />} />
+              <Route path="/wishlist" element={<Wishlist />} />
+              <Route path="/track-order" element={<TrackOrder />} />
+              <Route path="/success" element={<Success />} />
+              <Route path="/scanme" element={<ScanMe />} />
+            </Routes>
+          </Suspense>
+        </Layout>
+      </Router>
+    </AuthProvider>
+  );
+}
