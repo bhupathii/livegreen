@@ -28,6 +28,18 @@ export default function Checkout() {
   const isRazorpayLoaded = useRazorpay();
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    formState: { errors },
+  } = useForm<CheckoutFormValues>({
+    defaultValues: {
+      paymentMethod: "razorpay",
+    },
+  });
+
   // Promo code state
   const [promoCodeInput, setPromoCodeInput] = useState("");
   const [appliedPromo, setAppliedPromo] = useState<{ id: number; code: string; type: "percentage" | "fixed"; value: number } | null>(null);
@@ -146,17 +158,6 @@ export default function Checkout() {
     setPromoError("");
   };
 
-  const {
-    register,
-    handleSubmit,
-    watch,
-    setValue,
-    formState: { errors },
-  } = useForm<CheckoutFormValues>({
-    defaultValues: {
-      paymentMethod: "razorpay",
-    },
-  });
 
   const paymentMethod = watch("paymentMethod");
 

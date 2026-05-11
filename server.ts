@@ -714,7 +714,7 @@ async function startServer() {
   });
 
   // Image Upload
-  app.post("/api/upload", verifyAdmin, upload.single('image'), (req, res) => {
+  app.post("/api/upload", verifyAdmin, upload.single('image'), (req: any, res) => {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
     res.json({ success: true, url: `/uploads/${req.file.filename}`, filename: req.file.filename });
   });
