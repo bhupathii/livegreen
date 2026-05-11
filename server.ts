@@ -7,6 +7,8 @@ import bcrypt from "bcrypt";
 import Razorpay from "razorpay";
 import { db as pool } from "./src/lib/db.js";
 import { ICarryClient } from "./src/lib/icarry.js";
+import multer from "multer";
+import fs from "fs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -215,6 +217,69 @@ async function initDB() {
       id ${pool.isSQLite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY'},
       key_name VARCHAR(100) NOT NULL UNIQUE,
       key_value TEXT
+    )`,
+    `CREATE TABLE IF NOT EXISTS subscriptions (
+      id ${pool.isSQLite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      orderId VARCHAR(50) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      status VARCHAR(50) DEFAULT 'active',
+      frequency VARCHAR(50) DEFAULT 'monthly',
+      nextBillingDate VARCHAR(100),
+      items TEXT,
+      totalAmount INT
+    )`,
+    `CREATE TABLE IF NOT EXISTS bundles (
+      id ${pool.isSQLite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      name VARCHAR(255) NOT NULL,
+      slug VARCHAR(255) UNIQUE,
+      description TEXT,
+      discount_percent INT DEFAULT 0,
+      discount_amount INT DEFAULT 0,
+      image TEXT,
+      is_active INTEGER DEFAULT 1,
+      items TEXT
+    )`,
+    `CREATE TABLE IF NOT EXISTS notifications (
+      id ${pool.isSQLite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      type VARCHAR(50),
+      title VARCHAR(255),
+      message TEXT,
+      is_read INTEGER DEFAULT 0,
+      priority VARCHAR(20) DEFAULT 'normal',
+      created_at VARCHAR(100)
+    )`,
+    `CREATE TABLE IF NOT EXISTS audit_log (
+      id ${pool.isSQLite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      admin_user VARCHAR(100),
+      action VARCHAR(255),
+      entity_type VARCHAR(100),
+      entity_id VARCHAR(100),
+      details TEXT,
+      ip_address VARCHAR(50),
+      created_at VARCHAR(100)
+    )`,
+    `CREATE TABLE IF NOT EXISTS email_campaigns (
+      id ${pool.isSQLite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      name VARCHAR(255),
+      subject VARCHAR(255),
+      content TEXT,
+      status VARCHAR(50) DEFAULT 'draft',
+      recipients_count INT DEFAULT 0,
+      sent_at VARCHAR(100)
+    )`,
+    `CREATE TABLE IF NOT EXISTS nps_surveys (
+      id ${pool.isSQLite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      score INT NOT NULL,
+      comment TEXT,
+      date VARCHAR(100)
+    )`,
+    `CREATE TABLE IF NOT EXISTS video_testimonials (
+      id ${pool.isSQLite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      title VARCHAR(255),
+      videoUrl TEXT,
+      thumbnailUrl TEXT,
+      author VARCHAR(100),
+      status VARCHAR(50) DEFAULT 'active'
     )`
   ];
 
@@ -240,7 +305,7 @@ async function initDB() {
   const [adminCnt]: any = await pool.query("SELECT count(*) as count FROM admin_users");
   if (adminCnt[0].count === 0) {
     const defaultPass = await bcrypt.hash('password', 10);
-    await pool.query("INSERT IGNORE INTO admin_users (username, passwordHash) VALUES (?, ?)", ['admin', defaultPass]);
+    await pool.query(pool.isSQLite ? "INSERT OR IGNORE INTO admin_users (username, passwordHash) VALUES (?, ?)" : "INSERT IGNORE INTO admin_users (username, passwordHash) VALUES (?, ?)", ['admin', defaultPass]);
   }
 
   const [prodCnt]: any = await pool.query("SELECT count(*) as count FROM products");
@@ -275,6 +340,20 @@ async function startServer() {
   const app = express();
   const PORT = 4502;
 
+  // Setup Multer for image uploads
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = './public/uploads';
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+      cb(null, uniqueSuffix + path.extname(file.originalname));
+    }
+  });
+  const upload = multer({ storage });
+
   app.use(express.json());
 
   // Middleware to handle .php extensions from frontend calls
@@ -289,6 +368,14 @@ async function startServer() {
   const getSetting = async (key: string) => {
     const [rows]: any = await pool.query("SELECT key_value FROM app_settings WHERE key_name = ?", [key]);
     return rows.length > 0 ? rows[0].key_value : null;
+  };
+
+  // Helper to log audit actions
+  const logAudit = async (admin: string, action: string, type: string, id: string, details: string, ip: string) => {
+    await pool.query(
+      "INSERT INTO audit_log (admin_user, action, entity_type, entity_id, details, ip_address, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [admin, action, type, id, details, ip, new Date().toISOString()]
+    );
   };
 
   // Helper to fetch iCarry Client
@@ -324,17 +411,127 @@ async function startServer() {
     }
   });
 
-  // Public Settings API
-  app.get("/api/public_settings", async (req, res) => {
+  // Analytics Dashboard
+  app.get("/api/dashboard_analytics", verifyAdmin, async (req, res) => {
+    const { from, to } = req.query;
     try {
-      const [rows]: any = await pool.query("SELECT key_name, key_value FROM app_settings WHERE key_name IN (?, ?, ?)", 
-        ['razorpay_key', 'razorpay_secret', 'hf_api_key']); // Limit what's public? 
-      // Actually api.ts just expects a flat object or array.
-      const settings: any = {};
-      rows.forEach((r: any) => settings[r.key_name] = r.key_value);
-      res.json(settings);
-    } catch (e) { res.status(500).json({ error: 'DB Error' }); }
+      const [revRows]: any = await pool.query("SELECT SUM(totalAmount) as revenue, COUNT(*) as ordersCount FROM orders WHERE status != 'cancelled' AND date BETWEEN ? AND ?", [from, to]);
+      const [prevRevRows]: any = await pool.query("SELECT SUM(totalAmount) as revenue FROM orders WHERE status != 'cancelled' AND date < ?", [from]);
+      
+      const revenue = revRows[0].revenue || 0;
+      const totalOrders = revRows[0].ordersCount || 0;
+      const prevRevenue = prevRevRows[0].revenue || 0;
+      const revenueChange = prevRevenue === 0 ? 100 : ((revenue - prevRevenue) / prevRevenue) * 100;
+
+      const [statusRows]: any = await pool.query("SELECT status, COUNT(*) as count FROM orders GROUP BY status");
+      const [revenueTrend]: any = await pool.query("SELECT SUBSTR(date, 1, 10) as date, SUM(totalAmount) as revenue, COUNT(*) as orders FROM orders WHERE status != 'cancelled' GROUP BY SUBSTR(date, 1, 10) ORDER BY date DESC LIMIT 30");
+
+      res.json({
+        revenue,
+        revenueChange,
+        totalOrders,
+        ordersChange: 0, // Placeholder
+        avgOrderValue: totalOrders === 0 ? 0 : revenue / totalOrders,
+        conversionRate: 3.5, // Mocked
+        cac: 150, // Mocked
+        newCustomers: 12, // Mocked
+        clv: 2500, // Mocked
+        repeatRate: 15, // Mocked
+        repeatCustomers: 5, // Mocked
+        totalCustomers: 120, // Mocked
+        cartAbandonmentRate: 65, // Mocked
+        csatAvg: 4.8,
+        csatPercent: 95,
+        csatCount: 45,
+        ratingDistribution: [{ rating: 5, count: 35 }, { rating: 4, count: 8 }, { rating: 3, count: 2 }],
+        npsScore: 78,
+        npsTotal: 40,
+        npsBreakdown: [{ name: 'Promoters', value: 30 }, { name: 'Passives', value: 8 }, { name: 'Detractors', value: 2 }],
+        trafficSources: [{ name: 'Direct', value: 400 }, { name: 'Social', value: 300 }, { name: 'Email', value: 200 }],
+        revenueTrend: revenueTrend.reverse(),
+        ordersByStatus: statusRows.map((r: any) => ({ status: r.status, count: r.count })),
+        recentOrders: [], // Handled in /api/dashboard
+        unreadInquiries: 0,
+        pendingReviews: 0,
+        visits: 1250,
+        dateRange: { from, to }
+      });
+    } catch (e) { res.status(500).json({ error: 'Analytics error' }); }
   });
+
+  // Notifications
+  app.get("/api/notifications", verifyAdmin, async (req, res) => {
+    const [rows]: any = await pool.query("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50");
+    const [unread]: any = await pool.query("SELECT count(*) as count FROM notifications WHERE is_read = 0");
+    res.json({ notifications: rows, unreadCount: unread[0].count });
+  });
+
+  app.put("/api/notifications", verifyAdmin, async (req, res) => {
+    const { markAllRead } = req.body;
+    if (markAllRead) {
+      await pool.query("UPDATE notifications SET is_read = 1");
+    }
+    res.json({ success: true });
+  });
+
+  // Audit Log
+  app.get("/api/audit_log", verifyAdmin, async (req, res) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = 20;
+    const offset = (page - 1) * limit;
+    const [rows]: any = await pool.query("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ? OFFSET ?", [limit, offset]);
+    const [total]: any = await pool.query("SELECT count(*) as count FROM audit_log");
+    res.json({ logs: rows, total: total[0].count, page, pages: Math.ceil(total[0].count / limit) });
+  });
+
+  // Dashboard
+  app.get("/api/dashboard", verifyAdmin, async (req, res) => {
+    const [revRow]: any = await pool.query("SELECT SUM(totalAmount) as total FROM orders WHERE status != 'cancelled'");
+    const [ordRow]: any = await pool.query("SELECT count(*) as count FROM orders");
+    const [custRow]: any = await pool.query("SELECT count(*) as count FROM customers");
+    const [inqRow]: any = await pool.query("SELECT count(*) as count FROM inquiries WHERE status = 'unread'");
+    const [revwRow]: any = await pool.query("SELECT count(*) as count FROM reviews WHERE status = 'pending'");
+    const [recentOrders]: any = await pool.query("SELECT * FROM orders ORDER BY date DESC LIMIT 5");
+
+    res.json({
+      totalRevenue: revRow[0].total || 0,
+      totalOrders: ordRow[0].count,
+      totalCustomers: custRow[0].count,
+      unreadInquiries: inqRow[0].count,
+      pendingReviews: revwRow[0].count,
+      recentOrders: recentOrders.map((o: any) => ({ ...o, items: JSON.parse(o.items || "[]") }))
+    });
+  });
+
+  // Bundles
+  app.get("/api/bundles", async (req, res) => {
+    const [rows]: any = await pool.query("SELECT * FROM bundles WHERE is_active = 1");
+    res.json(rows.map((r: any) => ({ ...r, items: JSON.parse(r.items || "[]") })));
+  });
+
+  app.post("/api/bundles", verifyAdmin, async (req, res) => {
+    const { name, slug, description, discount_percent, discount_amount, image, items } = req.body;
+    const [info]: any = await pool.query(
+      "INSERT INTO bundles (name, slug, description, discount_percent, discount_amount, image, items) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [name, slug, description, discount_percent, discount_amount, image, JSON.stringify(items || [])]
+    );
+    res.json({ id: info.insertId || info.lastID });
+  });
+
+  // NPS Survey
+  app.post("/api/nps_survey", async (req, res) => {
+    const { score, comment } = req.body;
+    await pool.query("INSERT INTO nps_surveys (score, comment, date) VALUES (?, ?, ?)", [score, comment, new Date().toISOString()]);
+    res.json({ success: true });
+  });
+
+  // Video Testimonials
+  app.get("/api/video_testimonials", async (req, res) => {
+    const [rows]: any = await pool.query("SELECT * FROM video_testimonials WHERE status = 'active'");
+    res.json(rows);
+  });
+
+  // Settings API (Duplicate Cleanup - handled above)
 
   // Active Promos API
   app.get("/api/active_promos", async (req, res) => {
@@ -354,18 +551,23 @@ async function startServer() {
     res.json([]);
   });
 
-  // Settings API (Protected)
-  app.get("/api/admin/settings", verifyAdmin, async (req, res) => {
+  // Settings API (Protected) - Unified
+  app.get(["/api/admin/settings", "/api/settings"], verifyAdmin, async (req, res) => {
     try {
       const [rows]: any = await pool.query("SELECT key_name, key_value FROM app_settings");
       res.json(rows);
     } catch (e) { res.status(500).json({ error: 'DB Error' }); }
   });
 
-  app.put("/api/admin/settings", verifyAdmin, async (req, res) => {
+  app.put(["/api/admin/settings", "/api/settings"], verifyAdmin, async (req, res) => {
     const { key_name, key_value } = req.body;
     try {
-      await pool.query("UPDATE app_settings SET key_value = ? WHERE key_name = ?", [key_value, key_name]);
+      if (pool.isSQLite) {
+        await pool.query("INSERT OR REPLACE INTO app_settings (key_name, key_value) VALUES (?, ?)", [key_name, key_value]);
+      } else {
+        await pool.query("INSERT INTO app_settings (key_name, key_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE key_value = ?", [key_name, key_value, key_value]);
+      }
+      await logAudit((req as any).user.username, 'UPDATE_SETTING', 'setting', key_name, `Updated ${key_name}`, req.ip);
       res.json({ success: true });
     } catch (e) { res.status(500).json({ error: 'DB Error' }); }
   });
@@ -409,7 +611,9 @@ async function startServer() {
         subtitle, rating_override, bought_count, JSON.stringify(about_items || []), JSON.stringify(purity_profile || {}), JSON.stringify(product_info || {})
       ]
     );
-    res.json({ id: info.insertId });
+    const newId = info.insertId || info.lastID;
+    await logAudit((req as any).user.username, 'CREATE_PRODUCT', 'product', String(newId), `Created ${name}`, req.ip);
+    res.json({ id: newId });
   });
 
   app.put("/api/products/:id", verifyAdmin, async (req, res) => {
@@ -425,11 +629,13 @@ async function startServer() {
         req.params.id
       ]
     );
+    await logAudit((req as any).user.username, 'UPDATE_PRODUCT', 'product', req.params.id, `Updated ${name}`, req.ip);
     res.json({ success: true });
   });
 
   app.delete("/api/products/:id", verifyAdmin, async (req, res) => {
     await pool.query("DELETE FROM products WHERE id = ?", [req.params.id]);
+    await logAudit((req as any).user.username, 'DELETE_PRODUCT', 'product', req.params.id, `Deleted product ${req.params.id}`, req.ip);
     res.json({ success: true });
   });
 
@@ -463,23 +669,28 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  // Dashboard
-  app.get("/api/dashboard", verifyAdmin, async (req, res) => {
-    const [revRow]: any = await pool.query("SELECT SUM(totalAmount) as total FROM orders WHERE status != 'cancelled'");
-    const [ordRow]: any = await pool.query("SELECT count(*) as count FROM orders");
-    const [custRow]: any = await pool.query("SELECT count(*) as count FROM customers");
-    const [inqRow]: any = await pool.query("SELECT count(*) as count FROM inquiries WHERE status = 'unread'");
-    const [revwRow]: any = await pool.query("SELECT count(*) as count FROM reviews WHERE status = 'pending'");
-    const [recentOrders]: any = await pool.query("SELECT * FROM orders ORDER BY date DESC LIMIT 5");
+  // Email Campaigns
+  app.get("/api/email_campaigns", verifyAdmin, async (req, res) => {
+    const [rows] = await pool.query("SELECT * FROM email_campaigns ORDER BY sent_at DESC");
+    res.json(rows);
+  });
 
-    res.json({
-      totalRevenue: revRow[0].total || 0,
-      totalOrders: ordRow[0].count,
-      totalCustomers: custRow[0].count,
-      unreadInquiries: inqRow[0].count,
-      pendingReviews: revwRow[0].count,
-      recentOrders: recentOrders.map((o: any) => ({ ...o, items: JSON.parse(o.items || "[]") }))
-    });
+  app.post("/api/email_campaigns", verifyAdmin, async (req, res) => {
+    const { name, subject, content } = req.body;
+    const [info]: any = await pool.query("INSERT INTO email_campaigns (name, subject, content, status) VALUES (?, ?, ?, 'draft')", [name, subject, content]);
+    res.json({ id: info.insertId });
+  });
+
+  // Subscriptions
+  app.get("/api/subscriptions", verifyAdmin, async (req, res) => {
+    const [rows] = await pool.query("SELECT * FROM subscriptions ORDER BY nextBillingDate ASC");
+    res.json(rows);
+  });
+
+  // Image Upload
+  app.post("/api/upload", verifyAdmin, upload.single('image'), (req, res) => {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    res.json({ success: true, url: `/uploads/${req.file.filename}`, filename: req.file.filename });
   });
 
   // Promo Codes
@@ -610,6 +821,10 @@ async function startServer() {
 
       await connection.query("INSERT INTO orders (id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, status, date, icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         [id, customerName, email, phone, address, city, state, zip, JSON.stringify(items), totalAmount, paymentMethod, paymentId, 'pending', date, icarry_shipment_id, icarry_awb, icarry_tracking_url, icarry_status]);
+
+      // Create notification
+      await connection.query("INSERT INTO notifications (type, title, message, priority, created_at) VALUES (?, ?, ?, ?, ?)",
+        ['order', 'New Order Received', `Order ${id} from ${customerName} for ₹${totalAmount}`, 'high', new Date().toISOString()]);
 
       await connection.commit();
 
