@@ -533,6 +533,32 @@ async function startServer() {
 
   // Settings API (Duplicate Cleanup - handled above)
 
+  // Public Settings API
+  app.get("/api/public_settings", async (req, res) => {
+    try {
+      const [rows]: any = await pool.query("SELECT key_name, key_value FROM app_settings WHERE key_name IN (?, ?, ?)", 
+        ['razorpay_key', 'razorpay_secret', 'hf_api_key']); 
+      const settings: any = {};
+      rows.forEach((r: any) => settings[r.key_name] = r.key_value);
+      res.json(settings);
+    } catch (e) { res.status(500).json({ error: 'DB Error' }); }
+  });
+
+  // Google Reviews
+  app.get("/api/google_reviews", async (req, res) => {
+    const [rows]: any = await pool.query("SELECT * FROM reviews WHERE rating >= 4 AND status = 'approved' ORDER BY date DESC LIMIT 10");
+    res.json({ 
+      reviews: rows.map((r: any) => ({
+        id: r.id,
+        reviewerName: r.customerName,
+        rating: r.rating,
+        reviewText: r.comment,
+        reviewDate: r.date
+      })), 
+      aggregate: { rating: "4.9", totalReviews: "128", mapsUrl: "#" } 
+    });
+  });
+
   // Active Promos API
   app.get("/api/active_promos", async (req, res) => {
     try {
@@ -1014,18 +1040,33 @@ async function startServer() {
       if (!rzpSecret) throw new Error("Razorpay secret not found");
 
       const crypto = await import("crypto");
-      const hmac = crypto.createHmac("sha256", rzpSecret);
-      hmac.update(`${razorpay_order_id}|${razorpay_payment_id}`);
-      const generatedSignature = hmac.digest("hex");
+      const hmac = crypto.createHmac('sha256', rzpSecret);
+      hmac.update(razorpay_order_id + "|" + razorpay_payment_id);
+      const generatedSignature = hmac.digest('hex');
 
       if (generatedSignature === razorpay_signature) {
+        await pool.query("UPDATE orders SET status = 'processing', paymentId = ? WHERE id = ?", [razorpay_payment_id, razorpay_order_id]);
+        await logAudit('system', 'PAYMENT_VERIFIED', 'order', razorpay_order_id, `Payment ${razorpay_payment_id} verified`, req.ip);
         res.json({ success: true });
       } else {
         res.status(400).json({ success: false, error: "Invalid signature" });
       }
-    } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e.message });
     }
+  });
+
+  // Backup
+  app.get("/api/backup", verifyAdmin, async (req, res) => {
+    try {
+      const tables = ['products', 'orders', 'customers', 'blogs', 'promo_codes', 'app_settings'];
+      const backup: any = {};
+      for (const table of tables) {
+        const [rows] = await pool.query(`SELECT * FROM ${table}`);
+        backup[table] = rows;
+      }
+      res.json({ success: true, data: backup, timestamp: new Date().toISOString() });
+    } catch (e) { res.status(500).json({ error: 'Backup failed' }); }
   });
 
   // Order Tracking API
