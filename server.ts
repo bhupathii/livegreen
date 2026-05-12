@@ -49,20 +49,8 @@ const upload = multer({ storage });
 
 app.use(express.json());
 
-// Middleware to handle .php extensions and legacy paths from frontend calls
+// No-op middleware (legacy PHP bridging removed)
 app.use((req, res, next) => {
-  // Strip .php
-  if (req.url.includes('.php')) {
-    req.url = req.url.replace(/\.php(\?|$)/, '$1');
-  }
-  // Bridge any /login path to /api/login
-  if (req.url.endsWith('/login') && !req.url.startsWith('/api')) {
-    req.url = '/api/login';
-  }
-  // Bridge /admin/login specifically
-  if (req.url.includes('/admin/login') && !req.url.startsWith('/api')) {
-    req.url = '/api/login';
-  }
   next();
 });
 
@@ -93,143 +81,32 @@ const getICarryClient = async () => {
 };
 
 async function initDB() {
-  const isPg = (pool as any).isPostgres;
-  const isSqlite = (pool as any).isSQLite;
-
-  if (isSqlite) {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        price INTEGER NOT NULL,
-        originalPrice INTEGER,
-        description TEXT,
-        image TEXT,
-        features TEXT,
-        category TEXT,
-        stock INTEGER DEFAULT 100,
-        seoTitle TEXT,
-        seoDescription TEXT,
-        seoKeywords TEXT,
-        subtitle TEXT,
-        rating_override REAL,
-        bought_count TEXT,
-        about_items TEXT,
-        purity_profile TEXT,
-        product_info TEXT
-      )
-    `);
-  } else if (isPg) {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS products (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        price INT NOT NULL,
-        originalPrice INT,
-        description TEXT,
-        image TEXT,
-        features TEXT,
-        category VARCHAR(100),
-        stock INT DEFAULT 100,
-        seoTitle VARCHAR(255),
-        seoDescription TEXT,
-        seoKeywords TEXT,
-        subtitle VARCHAR(255),
-        rating_override DECIMAL(3,1),
-        bought_count VARCHAR(255),
-        about_items TEXT,
-        purity_profile TEXT,
-        product_info TEXT
-      );
-    `);
-  } else {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS products (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        price INT NOT NULL,
-        originalPrice INT,
-        description TEXT,
-        image TEXT,
-        features TEXT,
-        category VARCHAR(100),
-        stock INT DEFAULT 100,
-        seoTitle VARCHAR(255),
-        seoDescription TEXT,
-        seoKeywords TEXT,
-        subtitle VARCHAR(255),
-        rating_override DECIMAL(3,1),
-        bought_count VARCHAR(255),
-        about_items TEXT,
-        purity_profile TEXT,
-        product_info TEXT
-      );
-    `);
-  }
-
-  // Add missing columns if they don't exist
-  let columnNames: string[] = [];
-  if (isSqlite) {
-    const [info]: any = await pool.query("PRAGMA table_info(products)");
-    columnNames = info.map((c: any) => c.name);
-  } else if (isPg) {
-    const [info]: any = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'products'");
-    columnNames = info.map((c: any) => c.column_name);
-  } else {
-    const [columns]: any = await pool.query("SHOW COLUMNS FROM products");
-    columnNames = columns.map((c: any) => c.Field);
-  }
-
-  const missingColumns = [
-    { name: 'stock', type: isSqlite ? 'INTEGER DEFAULT 100' : 'INT DEFAULT 100' },
-    { name: 'seoTitle', type: isSqlite ? 'TEXT' : 'VARCHAR(255)' },
-    { name: 'seoDescription', type: 'TEXT' },
-    { name: 'seoKeywords', type: 'TEXT' },
-    { name: 'subtitle', type: isSqlite ? 'TEXT' : 'VARCHAR(255)' },
-    { name: 'rating_override', type: isSqlite ? 'REAL' : 'DECIMAL(3,1)' },
-    { name: 'bought_count', type: isSqlite ? 'TEXT' : 'VARCHAR(255)' },
-    { name: 'about_items', type: 'TEXT' },
-    { name: 'purity_profile', type: 'TEXT' },
-    { name: 'product_info', type: 'TEXT' }
-  ];
-
-  for (const col of missingColumns) {
-    if (!columnNames.some(c => c.toLowerCase() === col.name.toLowerCase())) {
-      await pool.query(`ALTER TABLE products ADD COLUMN ${col.name} ${col.type}`);
-    }
-  }
-
-  // Check orders table
-  let orderColumns: string[] = [];
-  if (isSqlite) {
-    const [info]: any = await pool.query("PRAGMA table_info(orders)");
-    orderColumns = info.map((c: any) => c.name);
-  } else if (isPg) {
-    const [info]: any = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'orders'");
-    orderColumns = info.map((c: any) => c.column_name);
-  } else {
-    const [info]: any = await pool.query("SHOW COLUMNS FROM orders");
-    orderColumns = info.map((c: any) => c.Field);
-  }
-
-  const missingOrderColumns = [
-    { name: 'icarry_shipment_id', type: 'TEXT' },
-    { name: 'icarry_awb', type: 'TEXT' },
-    { name: 'icarry_tracking_url', type: 'TEXT' },
-    { name: 'icarry_status', type: 'TEXT' },
-    { name: 'is_subscription', type: 'INTEGER DEFAULT 0' },
-    { name: 'promoCodeId', type: 'INTEGER' }
-  ];
-
-  for (const col of missingOrderColumns) {
-    if (!orderColumns.some(c => c.toLowerCase() === col.name.toLowerCase())) {
-      await pool.query(`ALTER TABLE orders ADD COLUMN ${col.name} ${col.type}`);
-    }
-  }
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS products (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      price INT NOT NULL,
+      originalPrice INT,
+      description TEXT,
+      image TEXT,
+      features TEXT,
+      category VARCHAR(100),
+      stock INT DEFAULT 100,
+      seoTitle VARCHAR(255),
+      seoDescription TEXT,
+      seoKeywords TEXT,
+      subtitle VARCHAR(255),
+      rating_override DECIMAL(3,1),
+      bought_count VARCHAR(255),
+      about_items TEXT,
+      purity_profile TEXT,
+      product_info TEXT
+    );
+  `);
 
   const tables = [
     `CREATE TABLE IF NOT EXISTS blogs (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       title VARCHAR(255) NOT NULL,
       excerpt TEXT,
       content TEXT,
@@ -264,7 +141,7 @@ async function initDB() {
       promoCodeId INTEGER
     )`,
     `CREATE TABLE IF NOT EXISTS customers (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
       email VARCHAR(255) NOT NULL UNIQUE,
       phone VARCHAR(50) NOT NULL,
@@ -273,12 +150,12 @@ async function initDB() {
       joinDate VARCHAR(100) NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS admin_users (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       username VARCHAR(100) NOT NULL UNIQUE,
       passwordHash VARCHAR(255) NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS promo_codes (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       code VARCHAR(50) NOT NULL UNIQUE,
       discountType VARCHAR(50) NOT NULL,
       discountValue INT NOT NULL,
@@ -287,7 +164,7 @@ async function initDB() {
       status VARCHAR(50) DEFAULT 'active'
     )`,
     `CREATE TABLE IF NOT EXISTS referrals (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       referrerEmail VARCHAR(255) NOT NULL,
       referredEmail VARCHAR(255) NOT NULL,
       status VARCHAR(50) DEFAULT 'pending',
@@ -295,7 +172,7 @@ async function initDB() {
       date VARCHAR(100) NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS inquiries (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
       email VARCHAR(255) NOT NULL,
       subject VARCHAR(255) NOT NULL,
@@ -304,7 +181,7 @@ async function initDB() {
       date VARCHAR(100) NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS reviews (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       productId INT NOT NULL,
       customerName VARCHAR(255) NOT NULL,
       rating INT NOT NULL,
@@ -314,12 +191,12 @@ async function initDB() {
       FOREIGN KEY(productId) REFERENCES products(id) ON DELETE CASCADE
     )`,
     `CREATE TABLE IF NOT EXISTS app_settings (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       key_name VARCHAR(100) NOT NULL UNIQUE,
       key_value TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS subscriptions (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       orderId VARCHAR(50) NOT NULL,
       email VARCHAR(255) NOT NULL,
       status VARCHAR(50) DEFAULT 'active',
@@ -329,7 +206,7 @@ async function initDB() {
       totalAmount INT
     )`,
     `CREATE TABLE IF NOT EXISTS bundles (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       name VARCHAR(255) NOT NULL,
       slug VARCHAR(255) UNIQUE,
       description TEXT,
@@ -340,7 +217,7 @@ async function initDB() {
       items TEXT
     )`,
     `CREATE TABLE IF NOT EXISTS notifications (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       type VARCHAR(50),
       title VARCHAR(255),
       message TEXT,
@@ -349,7 +226,7 @@ async function initDB() {
       created_at VARCHAR(100)
     )`,
     `CREATE TABLE IF NOT EXISTS audit_log (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       admin_user VARCHAR(100),
       action VARCHAR(255),
       entity_type VARCHAR(100),
@@ -359,7 +236,7 @@ async function initDB() {
       created_at VARCHAR(100)
     )`,
     `CREATE TABLE IF NOT EXISTS email_campaigns (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       name VARCHAR(255),
       subject VARCHAR(255),
       content TEXT,
@@ -368,13 +245,13 @@ async function initDB() {
       sent_at VARCHAR(100)
     )`,
     `CREATE TABLE IF NOT EXISTS nps_surveys (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       score INT NOT NULL,
       comment TEXT,
       date VARCHAR(100)
     )`,
     `CREATE TABLE IF NOT EXISTS video_testimonials (
-      id ${isSqlite ? 'INTEGER PRIMARY KEY AUTOINCREMENT' : isPg ? 'SERIAL PRIMARY KEY' : 'INT AUTO_INCREMENT PRIMARY KEY'},
+      id SERIAL PRIMARY KEY,
       title VARCHAR(255),
       videoUrl TEXT,
       thumbnailUrl TEXT,
@@ -399,23 +276,13 @@ async function initDB() {
   ];
 
   for (const [key, val] of defaultSettings) {
-    const upsertSql = isSqlite ? 
-      "INSERT OR IGNORE INTO app_settings (key_name, key_value) VALUES (?, ?)" : 
-      isPg ? 
-      "INSERT INTO app_settings (key_name, key_value) VALUES (?, ?) ON CONFLICT (key_name) DO NOTHING" : 
-      "INSERT IGNORE INTO app_settings (key_name, key_value) VALUES (?, ?)";
-    await pool.query(upsertSql, [key, val]);
+    await pool.query("INSERT INTO app_settings (key_name, key_value) VALUES ($1, $2) ON CONFLICT (key_name) DO NOTHING", [key, val]);
   }
 
   const [adminCnt]: any = await pool.query("SELECT count(*) as count FROM admin_users");
   if (adminCnt[0].count === 0) {
     const defaultPass = await bcrypt.hash('password', 10);
-    const upsertAdminSql = isSqlite ? 
-      "INSERT OR IGNORE INTO admin_users (username, passwordHash) VALUES (?, ?)" : 
-      isPg ? 
-      "INSERT INTO admin_users (username, passwordHash) VALUES (?, ?) ON CONFLICT (username) DO NOTHING" : 
-      "INSERT IGNORE INTO admin_users (username, passwordHash) VALUES (?, ?)";
-    await pool.query(upsertAdminSql, ['admin', defaultPass]);
+    await pool.query("INSERT INTO admin_users (username, passwordHash) VALUES (?, ?) ON CONFLICT (username) DO NOTHING", ['admin', defaultPass]);
   }
 
   const [prodCnt]: any = await pool.query("SELECT count(*) as count FROM products");
@@ -647,13 +514,7 @@ async function startServer() {
     const isPg = (pool as any).isPostgres;
     const isSqlite = (pool as any).isSQLite;
     try {
-      if (isSqlite) {
-        await pool.query("INSERT OR REPLACE INTO app_settings (key_name, key_value) VALUES (?, ?)", [key_name, key_value]);
-      } else if (isPg) {
-        await pool.query("INSERT INTO app_settings (key_name, key_value) VALUES (?, ?) ON CONFLICT (key_name) DO UPDATE SET key_value = EXCLUDED.key_value", [key_name, key_value]);
-      } else {
-        await pool.query("INSERT INTO app_settings (key_name, key_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE key_value = ?", [key_name, key_value, key_value]);
-      }
+      await pool.query("INSERT INTO app_settings (key_name, key_value) VALUES (?, ?) ON CONFLICT (key_name) DO UPDATE SET key_value = EXCLUDED.key_value", [key_name, key_value]);
       await logAudit((req as any).user.username, 'UPDATE_SETTING', 'setting', key_name, `Updated ${key_name}`, req.ip);
       res.json({ success: true });
     } catch (e) { res.status(500).json({ error: 'DB Error' }); }

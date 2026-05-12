@@ -88,7 +88,7 @@ export async function uploadImage(file: File): Promise<{ success: boolean; url: 
   const formData = new FormData();
   formData.append("image", file);
 
-  return fetchAuth("/api/upload.php", {
+  return fetchAuth("/api/upload", {
     method: "POST",
     body: formData,
     // Note: Don't set Content-Type header manually when sending FormData, 
@@ -97,23 +97,23 @@ export async function uploadImage(file: File): Promise<{ success: boolean; url: 
 }
 
 export async function getProducts(): Promise<Product[]> {
-  return fetchPublic("/api/products.php");
+  return fetchPublic("/api/products");
 }
 
 export async function getPublicSettings(): Promise<any> {
-  return fetchPublic("/api/public_settings.php");
+  return fetchPublic("/api/public_settings");
 }
 
 export async function getSettings(): Promise<any> {
-  return fetchAuth("/api/settings.php");
+  return fetchAuth("/api/settings");
 }
 
 export async function getProduct(id: number): Promise<Product> {
-  return fetchPublic(`/api/products.php/${id}`);
+  return fetchPublic(`/api/products/${id}`);
 }
 
 export async function createProduct(product: Omit<Product, "id">) {
-  return fetchAuth("/api/products.php", {
+  return fetchAuth("/api/products", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(product),
@@ -121,7 +121,7 @@ export async function createProduct(product: Omit<Product, "id">) {
 }
 
 export async function updateProduct(id: number, product: Omit<Product, "id">) {
-  return fetchAuth(`/api/products.php/${id}`, {
+  return fetchAuth(`/api/products/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(product),
@@ -129,21 +129,21 @@ export async function updateProduct(id: number, product: Omit<Product, "id">) {
 }
 
 export async function deleteProduct(id: number) {
-  return fetchAuth(`/api/products.php/${id}`, {
+  return fetchAuth(`/api/products/${id}`, {
     method: "DELETE",
   });
 }
 
 export async function getBlogs(): Promise<Blog[]> {
-  return fetchPublic("/api/blogs.php");
+  return fetchPublic("/api/blogs");
 }
 
 export async function getBlog(id: number): Promise<Blog> {
-  return fetchPublic(`/api/blogs.php/${id}`);
+  return fetchPublic(`/api/blogs/${id}`);
 }
 
 export async function createBlog(blog: Omit<Blog, "id">) {
-  return fetchAuth("/api/blogs.php", {
+  return fetchAuth("/api/blogs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(blog),
@@ -151,7 +151,7 @@ export async function createBlog(blog: Omit<Blog, "id">) {
 }
 
 export async function updateBlog(id: number, blog: Omit<Blog, "id">) {
-  return fetchAuth(`/api/blogs.php/${id}`, {
+  return fetchAuth(`/api/blogs/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(blog),
@@ -159,7 +159,7 @@ export async function updateBlog(id: number, blog: Omit<Blog, "id">) {
 }
 
 export async function deleteBlog(id: number) {
-  return fetchAuth(`/api/blogs.php/${id}`, {
+  return fetchAuth(`/api/blogs/${id}`, {
     method: "DELETE",
   });
 }
@@ -249,7 +249,7 @@ export interface AnalyticsDashboard {
 }
 
 export async function getAnalyticsDashboard(from: string, to: string): Promise<AnalyticsDashboard> {
-  return fetchAuth(`/api/dashboard_analytics.php?from=${from}&to=${to}`);
+  return fetchAuth(`/api/dashboard_analytics?from=${from}&to=${to}`);
 }
 
 // ----- Promo Codes API -----
@@ -276,11 +276,11 @@ export interface PromoCodeUsage {
 }
 
 export async function getPromoCodes(): Promise<PromoCode[]> {
-  return fetchAuth("/api/promo_codes.php");
+  return fetchAuth("/api/promo_codes");
 }
 
 export async function createPromoCode(promo: Partial<PromoCode>) {
-  return fetchAuth("/api/promo_codes.php", {
+  return fetchAuth("/api/promo_codes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(promo)
@@ -288,7 +288,7 @@ export async function createPromoCode(promo: Partial<PromoCode>) {
 }
 
 export async function updatePromoCode(id: number, promo: Partial<PromoCode>) {
-  return fetchAuth(`/api/promo_codes.php/${id}`, {
+  return fetchAuth(`/api/promo_codes/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(promo)
@@ -296,7 +296,7 @@ export async function updatePromoCode(id: number, promo: Partial<PromoCode>) {
 }
 
 export async function updatePromoStatus(id: number, status: string) {
-  return fetchAuth(`/api/promo_codes.php/${id}/status`, {
+  return fetchAuth(`/api/promo_codes/${id}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status })
@@ -304,13 +304,13 @@ export async function updatePromoStatus(id: number, status: string) {
 }
 
 export async function deletePromoCode(id: number) {
-  return fetchAuth(`/api/promo_codes.php/${id}`, {
+  return fetchAuth(`/api/promo_codes/${id}`, {
     method: "DELETE"
   });
 }
 
 export async function validatePromoCode(code: string, cartTotal: number, email?: string, phone?: string) {
-  const res = await fetch("/api/promo_codes.php/validate", {
+  const res = await fetch("/api/promo_codes/validate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code, cartTotal, email, phone })
@@ -330,11 +330,11 @@ export interface Inquiry {
 }
 
 export async function getInquiries(): Promise<Inquiry[]> {
-  return fetchAuth("/api/inquiries.php");
+  return fetchAuth("/api/inquiries");
 }
 
 export async function createInquiry(inquiry: Partial<Inquiry>) {
-  return fetchPublic("/api/inquiries.php", {
+  return fetchPublic("/api/inquiries", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(inquiry)
@@ -342,7 +342,7 @@ export async function createInquiry(inquiry: Partial<Inquiry>) {
 }
 
 export async function updateInquiryStatus(id: number, status: string) {
-  return fetchAuth(`/api/inquiries.php/${id}/status`, {
+  return fetchAuth(`/api/inquiries/${id}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status })
@@ -362,15 +362,15 @@ export interface Review {
 }
 
 export async function getReviews(): Promise<Review[]> {
-  return fetchAuth("/api/reviews.php");
+  return fetchAuth("/api/reviews");
 }
 
 export async function getProductReviews(productId: number): Promise<Review[]> {
-  return fetchPublic(`/api/products.php/${productId}/reviews`);
+  return fetchPublic(`/api/products/${productId}/reviews`);
 }
 
 export async function createReview(review: Partial<Review>) {
-  return fetchPublic("/api/reviews.php", {
+  return fetchPublic("/api/reviews", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(review)
@@ -378,7 +378,7 @@ export async function createReview(review: Partial<Review>) {
 }
 
 export async function updateReviewStatus(id: number, status: string) {
-  return fetchAuth(`/api/reviews.php/${id}/status`, {
+  return fetchAuth(`/api/reviews/${id}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status })
@@ -396,11 +396,11 @@ export interface Referral {
 }
 
 export async function getReferrals(): Promise<Referral[]> {
-  return fetchAuth("/api/referrals.php");
+  return fetchAuth("/api/referrals");
 }
 
 export async function createReferral(referral: Partial<Referral>) {
-  return fetchPublic("/api/referrals.php", {
+  return fetchPublic("/api/referrals", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(referral)
@@ -409,11 +409,11 @@ export async function createReferral(referral: Partial<Referral>) {
 
 // Existing Dashboard, Orders, Customers, Admin Logic Below
 export async function getDashboardStats(): Promise<DashboardStats> {
-  return fetchAuth("/api/dashboard.php");
+  return fetchAuth("/api/dashboard");
 }
 
 export async function getOrders(): Promise<Order[]> {
-  return fetchAuth("/api/orders.php");
+  return fetchAuth("/api/orders");
 }
 
 export async function createRazorpayOrder(data: {
@@ -439,7 +439,7 @@ export async function createRazorpayOrder(data: {
   discount: number;
   error?: string;
 }> {
-  return fetchPublic("/api/create_razorpay_order.php", {
+  return fetchPublic("/api/create_razorpay_order", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -447,7 +447,7 @@ export async function createRazorpayOrder(data: {
 }
 
 export async function createOrder(orderData: any) {
-  return fetchPublic("/api/orders.php", {
+  return fetchPublic("/api/orders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(orderData)
@@ -455,7 +455,7 @@ export async function createOrder(orderData: any) {
 }
 
 export async function checkPincode(pincode: string) {
-  return fetchPublic("/api/check_pincode.php", {
+  return fetchPublic("/api/check_pincode", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pincode })
@@ -463,7 +463,7 @@ export async function checkPincode(pincode: string) {
 }
 
 export async function updateOrderStatus(id: string, status: string) {
-  return fetchAuth(`/api/orders.php/${id}/status`, {
+  return fetchAuth(`/api/orders/${id}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status })
@@ -471,7 +471,7 @@ export async function updateOrderStatus(id: string, status: string) {
 }
 
 export async function cancelSubscription(orderId: string) {
-  return fetchPublic("/api/subscriptions.php", {
+  return fetchPublic("/api/subscriptions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ orderId, action: "cancel" })
@@ -479,15 +479,15 @@ export async function cancelSubscription(orderId: string) {
 }
 
 export async function getSubscriptions(orderId: string, contact: string): Promise<any[]> {
-  return fetchPublic(`/api/subscriptions.php?orderId=${encodeURIComponent(orderId)}&contact=${encodeURIComponent(contact)}`);
+  return fetchPublic(`/api/subscriptions?orderId=${encodeURIComponent(orderId)}&contact=${encodeURIComponent(contact)}`);
 }
 
 export async function getAllSubscriptions(): Promise<any[]> {
-  return fetchAuth(`/api/subscriptions.php`);
+  return fetchAuth(`/api/subscriptions`);
 }
 
 export async function updateAdminSubscriptionStatus(id: number, status: string) {
-  return fetchAuth(`/api/subscriptions.php/${id}/status`, {
+  return fetchAuth(`/api/subscriptions/${id}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status })
@@ -501,7 +501,7 @@ export async function updateSubscriptionStatus(
   contact: string,
   frequency?: string
 ) {
-  return fetchPublic("/api/subscriptions.php", {
+  return fetchPublic("/api/subscriptions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ subscriptionId, action, orderId, contact, frequency })
@@ -509,11 +509,11 @@ export async function updateSubscriptionStatus(
 }
 
 export async function getCustomers(): Promise<Customer[]> {
-  return fetchAuth("/api/customers.php");
+  return fetchAuth("/api/customers");
 }
 
 export async function adminLogin(username: string, password: string): Promise<{ success: boolean; token?: string; error?: string }> {
-  const res = await fetch("/api/login.php", {
+  const res = await fetch("/api/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password })
@@ -552,7 +552,7 @@ export interface TrackedOrder {
 }
 
 export async function trackOrder(orderId: string): Promise<{ success: boolean; order?: TrackedOrder; error?: string }> {
-  const res = await fetch("/api/order_track.php", {
+  const res = await fetch("/api/order_track", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ orderId })
@@ -561,7 +561,7 @@ export async function trackOrder(orderId: string): Promise<{ success: boolean; o
 }
 
 export async function trackOrdersByEmail(email: string): Promise<{ success: boolean; orders?: TrackedOrder[]; error?: string }> {
-  const res = await fetch("/api/order_track.php", {
+  const res = await fetch("/api/order_track", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email })
@@ -579,7 +579,7 @@ export interface ActivePromo {
 }
 
 export async function getActivePromos(): Promise<{ success: boolean; promos?: ActivePromo[] }> {
-  const res = await fetch("/api/active_promos.php");
+  const res = await fetch("/api/active_promos");
   return res.json();
 }
 
@@ -601,15 +601,15 @@ export interface GoogleReviewsResponse {
 }
 
 export async function getGoogleReviews(): Promise<GoogleReviewsResponse> {
-  return fetchPublic("/api/google_reviews.php");
+  return fetchPublic("/api/google_reviews");
 }
 
 export async function getGoogleReviewsAdmin(): Promise<GoogleReviewsResponse> {
-  return fetchAuth("/api/google_reviews.php");
+  return fetchAuth("/api/google_reviews");
 }
 
 export async function createGoogleReview(data: Partial<GoogleReview>) {
-  return fetchAuth("/api/google_reviews.php", {
+  return fetchAuth("/api/google_reviews", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -617,7 +617,7 @@ export async function createGoogleReview(data: Partial<GoogleReview>) {
 }
 
 export async function updateGoogleReview(id: number, data: Partial<GoogleReview>) {
-  return fetchAuth(`/api/google_reviews.php/${id}`, {
+  return fetchAuth(`/api/google_reviews/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -625,7 +625,7 @@ export async function updateGoogleReview(id: number, data: Partial<GoogleReview>
 }
 
 export async function deleteGoogleReview(id: number) {
-  return fetchAuth(`/api/google_reviews.php/${id}`, { method: "DELETE" });
+  return fetchAuth(`/api/google_reviews/${id}`, { method: "DELETE" });
 }
 
 // ═══════════════ BUNDLES ═══════════════
@@ -640,24 +640,24 @@ export interface BundleItem {
   price: number; image: string; stock: number;
 }
 export async function getBundles(): Promise<Bundle[]> {
-  return fetchPublic("/api/bundles.php");
+  return fetchPublic("/api/bundles");
 }
 export async function getBundle(id: number): Promise<Bundle> {
-  return fetchPublic(`/api/bundles.php/${id}`);
+  return fetchPublic(`/api/bundles/${id}`);
 }
 export async function createBundle(data: any) {
-  return fetchAuth("/api/bundles.php", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+  return fetchAuth("/api/bundles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
 }
 export async function updateBundle(id: number, data: any) {
-  return fetchAuth(`/api/bundles.php/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+  return fetchAuth(`/api/bundles/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
 }
 export async function deleteBundle(id: number) {
-  return fetchAuth(`/api/bundles.php/${id}`, { method: "DELETE" });
+  return fetchAuth(`/api/bundles/${id}`, { method: "DELETE" });
 }
 
 // ═══════════════ NPS SURVEY ═══════════════
 export async function submitNpsSurvey(score: number, comment?: string) {
-  return fetchPublic("/api/nps_survey.php", {
+  return fetchPublic("/api/nps_survey", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ score, comment }),
   });
@@ -669,10 +669,10 @@ export interface AdminNotification {
   is_read: number; created_at: string; priority?: string;
 }
 export async function getAdminNotifications(): Promise<{ notifications: AdminNotification[]; unreadCount: number }> {
-  return fetchAuth("/api/notifications.php");
+  return fetchAuth("/api/notifications");
 }
 export async function markNotificationsRead() {
-  return fetchAuth("/api/notifications.php", {
+  return fetchAuth("/api/notifications", {
     method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ markAllRead: true }),
   });
@@ -684,50 +684,50 @@ export interface AuditLogEntry {
   entity_id: string; details: string; ip_address: string; created_at: string;
 }
 export async function getAuditLog(page = 1): Promise<{ logs: AuditLogEntry[]; total: number; page: number; pages: number }> {
-  return fetchAuth(`/api/audit_log.php?page=${page}`);
+  return fetchAuth(`/api/audit_log?page=${page}`);
 }
 
 // ═══════════════ EMAIL CAMPAIGNS ═══════════════
 export async function getEmailCampaigns() {
-  return fetchAuth("/api/email_campaigns.php");
+  return fetchAuth("/api/email_campaigns");
 }
 export async function createEmailCampaign(data: any) {
-  return fetchAuth("/api/email_campaigns.php/campaign", {
+  return fetchAuth("/api/email_campaigns/campaign", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
   });
 }
 export async function sendEmailCampaign(campaignId: number) {
-  return fetchAuth("/api/email_campaigns.php/send", {
+  return fetchAuth("/api/email_campaigns/send", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ campaignId }),
   });
 }
 export async function deleteEmailCampaign(campaignId: number) {
-  return fetchAuth("/api/email_campaigns.php", {
+  return fetchAuth("/api/email_campaigns", {
     method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: campaignId }),
   });
 }
 export async function updateEmailCampaign(id: number, data: any) {
-  return fetchAuth("/api/email_campaigns.php", {
+  return fetchAuth("/api/email_campaigns", {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...data }),
   });
 }
 export async function getAbandonedCarts() {
-  return fetchAuth("/api/email_campaigns.php/abandoned");
+  return fetchAuth("/api/email_campaigns/abandoned");
 }
 export async function sendCartRecovery(cartId: number) {
-  return fetchAuth("/api/email_campaigns.php/recover", {
+  return fetchAuth("/api/email_campaigns/recover", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cartId }),
   });
 }
 
 // ═══════════════ BACKUP ═══════════════
 export async function createBackup() {
-  return fetchAuth("/api/backup.php");
+  return fetchAuth("/api/backup");
 }
 
 // ═══════════════ CUSTOMER SEGMENTATION ═══════════════
 export async function getCustomerSegments() {
-  return fetchAuth("/api/customers.php?segments=1");
+  return fetchAuth("/api/customers?segments=1");
 }
 
 // ═══════════════ ICARRY LOGISTICS ═══════════════
@@ -742,7 +742,7 @@ export async function getShippingEstimate(data: {
   shipment_type?: 'C' | 'P';
   shipment_value?: number;
 }) {
-  return fetchPublic("/api/icarry/estimate.php", {
+  return fetchPublic("/api/icarry/estimate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data)
@@ -750,7 +750,7 @@ export async function getShippingEstimate(data: {
 }
 
 export async function getICarryTracking(shipment_id: string) {
-  return fetchPublic("/api/icarry/track.php", {
+  return fetchPublic("/api/icarry/track", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ shipment_id })
