@@ -5,7 +5,7 @@ import { useCart } from "@/context/CartContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRazorpay } from "@/hooks/useRazorpay";
-import { CheckCircle, Truck, CreditCard, Banknote, ShieldCheck, ArrowLeft, ShoppingBag } from "lucide-react";
+import { CheckCircle, Truck, CreditCard, Banknote, ShieldCheck, ArrowLeft, ShoppingBag, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "motion/react";
 import { createOrder, createRazorpayOrder, verifyRazorpayPayment, validatePromoCode, getActivePromos, ActivePromo, getShippingEstimate } from "@/lib/api";
@@ -44,6 +44,7 @@ export default function Checkout() {
   const [promoCodeInput, setPromoCodeInput] = useState("");
   const [appliedPromo, setAppliedPromo] = useState<{ id: number; code: string; type: "percentage" | "fixed"; value: number } | null>(null);
   const [promoError, setPromoError] = useState("");
+  const [paymentError, setPaymentError] = useState("");
   const [isApplyingPromo, setIsApplyingPromo] = useState(false);
   const [availablePromos, setAvailablePromos] = useState<ActivePromo[]>([]);
   const [searchParams] = useSearchParams();
@@ -176,7 +177,14 @@ export default function Checkout() {
     );
   }
 
+  const handlePaymentError = (msg: string) => {
+    setPaymentError(msg);
+    setIsProcessing(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const onSubmit = async (data: CheckoutFormValues) => {
+    setPaymentError("");
     setIsProcessing(true);
 
     // Build order payload
@@ -218,13 +226,11 @@ export default function Checkout() {
           window.location.href = `/success`;
         }
       } catch (error: any) {
-        alert(`Failed to create order: ${error.message}. Please try again.`);
-        setIsProcessing(false);
+        handlePaymentError(`Failed to create order: ${error.message}. Please try again.`);
       }
     } else {
       if (!isRazorpayLoaded) {
-        alert("Razorpay SDK failed to load. Please check your connection.");
-        setIsProcessing(false);
+        handlePaymentError("Razorpay SDK failed to load. Please check your connection.");
         return;
       }
 
@@ -251,8 +257,7 @@ export default function Checkout() {
         });
 
         if (!rzpOrder.success || !rzpOrder.order_id) {
-          alert(rzpOrder.order_id === "null" ? "Failed to create payment order. Please try again." : (rzpOrder.error || "Failed to create payment order. Please try again."));
-          setIsProcessing(false);
+          handlePaymentError(rzpOrder.order_id === "null" ? "Failed to create payment order. Please try again." : (rzpOrder.error || "Failed to create payment order. Please try again."));
           return;
         }
 
@@ -287,7 +292,7 @@ export default function Checkout() {
                 },
               });
             } catch (error: any) {
-              alert(`Payment verification failed: ${error.message}. Please contact support.`);
+              handlePaymentError(`Payment verification failed: ${error.message}. Please contact support.`);
             }
           },
           prefill: {
@@ -302,13 +307,11 @@ export default function Checkout() {
 
         const rzp = new (window as any).Razorpay(options);
         rzp.on("payment.failed", function (response: any) {
-          alert(response.error.description);
-          setIsProcessing(false);
+          handlePaymentError(`Payment declined: ${response.error.description}`);
         });
         rzp.open();
       } catch (error) {
-        alert("Failed to initiate payment. Please try again.");
-        setIsProcessing(false);
+        handlePaymentError("Failed to initiate payment. Please try again.");
       }
     }
   };
@@ -326,6 +329,17 @@ export default function Checkout() {
         <div className="grid grid-cols-1 gap-x-12 gap-y-10 lg:grid-cols-12">
           {/* Form Section */}
           <div className="lg:col-span-7">
+            {paymentError && (
+              <div className="mb-8 p-6 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-4 shadow-sm animate-in fade-in slide-in-from-top-4">
+                <div className="h-10 w-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <AlertCircle className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-red-800 text-lg mb-1">Payment Failed</h3>
+                  <p className="text-red-700 text-sm">{paymentError}</p>
+                </div>
+              </div>
+            )}
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-8">
               {/* Contact Info */}
               <motion.div
