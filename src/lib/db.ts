@@ -1,21 +1,36 @@
+import pg from "pg";
 import mysql from "mysql2/promise";
 import sqlite from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// fallback to SQLite if DB_HOST is not set or USE_SQLITE is true
-const isSQLite = process.env.USE_SQLITE === "true" || !process.env.DB_HOST;
+// Priority: Postgres (Supabase) > MySQL > SQLite
+const isPostgres = !!process.env.DATABASE_URL;
+const isSQLite = !isPostgres && (process.env.USE_SQLITE === "true" || !process.env.DB_HOST);
 
+let pgPool: pg.Pool | null = null;
 let mysqlPool: mysql.Pool | null = null;
 let sqliteDb: sqlite.Database | null = null;
 
-if (isSQLite) {
+if (isPostgres) {
+  console.log("Using PostgreSQL (Supabase)");
+  pgPool = new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+      rejectUnauthorized: false // Required for Supabase
+    }
+  });
+} else if (isSQLite) {
   console.log("Using SQLite fallback");
   sqliteDb = new sqlite(path.resolve(__dirname, "../../honey.db"));
   sqliteDb.pragma('journal_mode = WAL');
 } else {
+  console.log("Using MySQL");
   const dbConfig = {
     host: process.env.DB_HOST || '82.25.121.98',
     user: process.env.DB_USER || 'u711900092_livegreen',
@@ -30,16 +45,42 @@ if (isSQLite) {
 }
 
 export const db = {
+  isPostgres,
   isSQLite,
   async query(sql: string, params?: any[]): Promise<any> {
-    if (isSQLite && sqliteDb) {
+    if (isPostgres && pgPool) {
+      // Postgres uses $1, $2 instead of ?
+      let pgSql = sql;
+      if (params && params.length > 0) {
+        let count = 0;
+        pgSql = sql.replace(/\?/g, () => {
+          count++;
+          return `$${count}`;
+        });
+      }
+      
+      // Basic translation for common v4 migration issues
+      pgSql = pgSql
+        .replace(/INSERT IGNORE/g, "INSERT") // Postgres uses ON CONFLICT
+        .replace(/INSERT OR IGNORE/g, "INSERT")
+        .replace(/INT AUTO_INCREMENT/g, "SERIAL")
+        .replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, "SERIAL PRIMARY KEY");
+
+      const result = await pgPool.query(pgSql, params);
+      
+      // Return format consistent with mysql2/better-sqlite3
+      if (sql.trim().toUpperCase().startsWith("SELECT") || sql.trim().toUpperCase().startsWith("SHOW")) {
+        return [result.rows, result.fields];
+      } else {
+        return [{ insertId: (result.rows[0] as any)?.id || null, affectedRows: result.rowCount }];
+      }
+    } else if (isSQLite && sqliteDb) {
       const normalizedSql = sql
         .replace(/INSERT IGNORE/g, "INSERT OR IGNORE")
         .replace(/INT AUTO_INCREMENT/g, "INTEGER PRIMARY KEY AUTOINCREMENT")
         .replace(/TINYINT\(1\)/g, "INTEGER")
         .replace(/DECIMAL\(\d+,\d+\)/g, "REAL");
 
-      // Handle multiple statements if necessary (rudimentary split)
       if (normalizedSql.includes(';') && normalizedSql.trim().split(';').filter(s => s.trim()).length > 1) {
         const statements = normalizedSql.split(';').filter(s => s.trim());
         let lastResult: any = null;
@@ -70,7 +111,16 @@ export const db = {
   },
 
   async getConnection(): Promise<any> {
-    if (isSQLite && sqliteDb) {
+    if (isPostgres && pgPool) {
+      const client = await pgPool.connect();
+      return {
+        query: (sql: string, params?: any[]) => this.query(sql, params),
+        beginTransaction: async () => client.query("BEGIN"),
+        commit: async () => client.query("COMMIT"),
+        rollback: async () => client.query("ROLLBACK"),
+        release: () => client.release()
+      };
+    } else if (isSQLite && sqliteDb) {
       return {
         query: (sql: string, params?: any[]) => this.query(sql, params),
         beginTransaction: async () => sqliteDb!.prepare("BEGIN").run(),
