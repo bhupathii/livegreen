@@ -61,18 +61,81 @@ export const db = {
       
       // Basic translation for common v4 migration issues
       pgSql = pgSql
-        .replace(/INSERT IGNORE/g, "INSERT") // Postgres uses ON CONFLICT
+        .replace(/INSERT IGNORE/g, "INSERT") 
         .replace(/INSERT OR IGNORE/g, "INSERT")
         .replace(/INT AUTO_INCREMENT/g, "SERIAL")
         .replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, "SERIAL PRIMARY KEY");
 
+      // Handle insertId for Postgres
+      const isInsert = pgSql.trim().toUpperCase().startsWith("INSERT");
+      if (isInsert && !pgSql.toUpperCase().includes("RETURNING")) {
+        pgSql += " RETURNING id";
+      }
+
       const result = await pgPool.query(pgSql, params);
       
-      // Return format consistent with mysql2/better-sqlite3
+      // Map results to match expected casing and handle BigInts
+      const rows = result.rows.map(row => {
+        const newRow: any = {};
+        for (const key in row) {
+          let val = row[key];
+          // Convert stringy numbers (like COUNT results) to Numbers
+          if (typeof val === 'string' && /^\d+$/.test(val) && val.length < 15) {
+            val = Number(val);
+          }
+          
+          let newKey = key;
+          // Map common mixed-case keys expected by the frontend/server
+          const mappings: any = {
+            'passwordhash': 'passwordHash',
+            'customername': 'customerName',
+            'totalamount': 'totalAmount',
+            'paymentmethod': 'paymentMethod',
+            'paymentid': 'paymentId',
+            'originalprice': 'originalPrice',
+            'seotitle': 'seoTitle',
+            'seodescription': 'seoDescription',
+            'seokeywords': 'seoKeywords',
+            'rating_override': 'rating_override',
+            'bought_count': 'bought_count',
+            'about_items': 'about_items',
+            'purity_profile': 'purity_profile',
+            'product_info': 'product_info',
+            'promocodeid': 'promoCodeId',
+            'discounttype': 'discountType',
+            'discountvalue': 'discountValue',
+            'minspend': 'minSpend',
+            'expirydate': 'expiryDate',
+            'joindate': 'joinDate',
+            'totalspent': 'totalSpent',
+            'orderscount': 'ordersCount',
+            'key_name': 'key_name',
+            'key_value': 'key_value',
+            'productid': 'productId',
+            'nextbillingdate': 'nextBillingDate',
+            'discount_percent': 'discount_percent',
+            'discount_amount': 'discount_amount',
+            'is_active': 'is_active',
+            'is_read': 'is_read',
+            'created_at': 'created_at',
+            'admin_user': 'admin_user',
+            'entity_type': 'entity_type',
+            'entity_id': 'entity_id',
+            'recipients_count': 'recipients_count',
+            'sent_at': 'sent_at',
+            'videourl': 'videoUrl',
+            'thumbnailurl': 'thumbnailUrl'
+          };
+          if (mappings[key]) newKey = mappings[key];
+          newRow[newKey] = val;
+        }
+        return newRow;
+      });
+
       if (sql.trim().toUpperCase().startsWith("SELECT") || sql.trim().toUpperCase().startsWith("SHOW")) {
-        return [result.rows, result.fields];
+        return [rows, result.fields];
       } else {
-        return [{ insertId: (result.rows[0] as any)?.id || null, affectedRows: result.rowCount }];
+        return [{ insertId: (rows[0] as any)?.id || null, affectedRows: result.rowCount }];
       }
     } else if (isSQLite && sqliteDb) {
       const normalizedSql = sql
