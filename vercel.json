@@ -6,6 +6,14 @@
       "destination": "/api/index.ts"
     },
     {
+      "source": "/(.*)\\.php",
+      "destination": "/api/index.ts"
+    },
+    {
+      "source": "/admin/login(.*)",
+      "destination": "/api/index.ts"
+    },
+    {
       "source": "/(.*)",
       "destination": "/"
     }

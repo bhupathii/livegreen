@@ -49,10 +49,15 @@ const upload = multer({ storage });
 
 app.use(express.json());
 
-// Middleware to handle .php extensions from frontend calls
+// Middleware to handle .php extensions and legacy paths from frontend calls
 app.use((req, res, next) => {
+  // Strip .php
   if (req.url.includes('.php')) {
     req.url = req.url.replace(/\.php(\?|$)/, '$1');
+  }
+  // Bridge /admin/login to /api/login
+  if (req.url.includes('/admin/login') && !req.url.startsWith('/api')) {
+    req.url = '/api/login';
   }
   next();
 });
