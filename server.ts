@@ -49,8 +49,11 @@ const upload = multer({ storage });
 
 app.use(express.json());
 
-// No-op middleware (legacy PHP bridging removed)
+// Middleware to handle legacy .php extensions
 app.use((req, res, next) => {
+  if (req.url.includes('.php')) {
+    req.url = req.url.replace(/\.php(\?|$)/, '$1');
+  }
   next();
 });
 
