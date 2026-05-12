@@ -1192,20 +1192,36 @@ async function startServer() {
       const [rows]: any = await pool.query("SELECT * FROM admin_users WHERE username = ?", [username]);
       if (rows.length > 0) {
         const user = rows[0];
-        const match = await bcrypt.compare(password, user.passwordHash);
+        // Resilient check for both 'passwordHash' and 'passwordhash' (Postgres fallback)
+        const hash = user.passwordHash || user.passwordhash;
+        if (!hash) {
+          console.error("User found but no password hash property available:", Object.keys(user));
+          return res.status(500).json({ error: "Configuration error" });
+        }
+        const match = await bcrypt.compare(password, hash);
         if (match) {
           const token = jwt.sign({ username: user.username, id: user.id }, JWT_SECRET, { expiresIn: '12h' });
           return res.json({ success: true, token });
         }
       }
       res.status(401).json({ error: "Invalid credentials" });
-    } catch (e) {
+    } catch (e: any) {
+      console.error("Login Error:", e.message);
       res.status(500).json({ error: "Login failed" });
     }
   };
 
   app.post("/api/admin/login", handleLogin);
   app.post("/api/login", handleLogin);
+
+  app.get("/api/health", async (req, res) => {
+    try {
+      const [rows]: any = await pool.query("SELECT count(*) as count FROM admin_users");
+      res.json({ status: "ok", database: "connected", adminCount: rows[0].count });
+    } catch (e: any) {
+      res.status(500).json({ status: "error", database: "disconnected", error: e.message });
+    }
+  });
 
   // iCarry Logistics APIs
   app.post("/api/icarry/estimate", async (req, res) => {
