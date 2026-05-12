@@ -8,7 +8,7 @@ import { useRazorpay } from "@/hooks/useRazorpay";
 import { CheckCircle, Truck, CreditCard, Banknote, ShieldCheck, ArrowLeft, ShoppingBag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion } from "motion/react";
-import { createOrder, createRazorpayOrder, validatePromoCode, getActivePromos, ActivePromo, getShippingEstimate } from "@/lib/api";
+import { createOrder, createRazorpayOrder, verifyRazorpayPayment, validatePromoCode, getActivePromos, ActivePromo, getShippingEstimate } from "@/lib/api";
 
 interface CheckoutFormValues {
   firstName: string;
@@ -267,26 +267,27 @@ export default function Checkout() {
           order_id: rzpOrder.order_id,
           handler: async function (response: any) {
             try {
-              // Save the successful order
-              const apiRes = await createOrder({ ...orderData, paymentId: response.razorpay_payment_id });
-              
-              if (!apiRes || apiRes.error) {
-                throw new Error(apiRes?.error || "Unknown server error");
+              // Step 3: Verify payment on server
+              const verifyRes = await verifyRazorpayPayment({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              });
+
+              if (!verifyRes.success) {
+                throw new Error(verifyRes.error || "Payment verification failed");
               }
 
+              // Step 4: Record success (already handled by server verification for status)
               clearCart();
-              try {
-                navigate("/success", {
-                  state: {
-                    orderId: apiRes.orderId,
-                    paymentId: response.razorpay_payment_id,
-                  },
-                });
-              } catch (e) {
-                window.location.href = `/success`;
-              }
+              navigate("/success", {
+                state: {
+                  orderId: response.razorpay_order_id,
+                  paymentId: response.razorpay_payment_id,
+                },
+              });
             } catch (error: any) {
-              alert(`Payment successful but failed to record order on server: ${error.message}. Please contact support.`);
+              alert(`Payment verification failed: ${error.message}. Please contact support.`);
             }
           },
           prefill: {

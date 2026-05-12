@@ -1038,7 +1038,7 @@ async function startServer() {
 
       // 3. Create Razorpay order
       const rzpOrder = await razorpay.orders.create({
-        amount: finalAmount * 100, // Razorpay expects amount in paise
+        amount: Math.round(finalAmount * 100), // Razorpay expects amount in paise
         currency: "INR",
         receipt: `receipt_${Date.now()}`,
         notes: {
@@ -1046,6 +1046,13 @@ async function startServer() {
           customer_email: customerInfo.email
         }
       });
+
+      // 4. PRE-INSERT order into DB as 'pending'
+      // This ensures we have a record before the payment widget even opens
+      await pool.query(
+        "INSERT INTO orders (id, customerName, email, phone, address, city, state, zip, items, totalAmount, paymentMethod, paymentId, status, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [rzpOrder.id, customerInfo.name, customerInfo.email, customerInfo.phone, customerInfo.address, customerInfo.city, customerInfo.state, customerInfo.zip, JSON.stringify(items), finalAmount, 'razorpay', null, 'pending', new Date().toISOString()]
+      );
 
       res.json({
         success: true,

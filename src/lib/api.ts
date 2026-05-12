@@ -252,6 +252,19 @@ export async function getAnalyticsDashboard(from: string, to: string): Promise<A
   return fetchAuth(`/api/dashboard_analytics?from=${from}&to=${to}`);
 }
 
+export async function verifyRazorpayPayment(data: {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}) {
+  const res = await fetch("/api/verify_razorpay_payment", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  });
+  return res.json();
+}
+
 // ----- Promo Codes API -----
 export interface PromoCode {
   id: number;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { LayoutDashboard, ShoppingBag, Users, Package, FileText, Ticket, MessageSquare, Star, Gift, LogOut, ArrowLeft, Settings as SettingsIcon, Globe, Video, Bell, History, Mail, Database } from "lucide-react";
+import { LayoutDashboard, ShoppingBag, Users, Package, FileText, Ticket, MessageSquare, Star, Gift, LogOut, ArrowLeft, Settings as SettingsIcon, Globe, Video, Bell, History, Mail, Database, ShieldCheck } from "lucide-react";
 import { DashboardTab } from "@/components/admin/DashboardTab";
 import { OrdersTab } from "@/components/admin/OrdersTab";
 import { CustomersTab } from "@/components/admin/CustomersTab";
@@ -24,11 +24,30 @@ type TabId = 'dashboard' | 'orders' | 'customers' | 'products' | 'blogs' | 'prom
 
 export default function Admin() {
   const { isAuthenticated, logout } = useAuth();
+
+  if (!isAuthenticated) return <AdminLogin />;
+
+  return (
+    <div className="admin-diagnostics">
+      <AdminDashboardContent />
+    </div>
+  );
+}
+
+function AdminDashboardContent() {
+  const { logout } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId | 'settings'>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
   const navigate = useNavigate();
 
-  // Close mobile menu when tab changes
+  // Simple local error boundary effect
+  useEffect(() => {
+    const handleError = (e: ErrorEvent) => setError(e.error);
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
+  }, []);
+
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [activeTab]);
@@ -56,7 +75,23 @@ export default function Admin() {
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ] as const;
 
-  if (!isAuthenticated) return <AdminLogin />;
+  if (error) {
+    return (
+      <div className="min-h-screen bg-rose-50 flex items-center justify-center p-6">
+        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-rose-100 text-center">
+          <div className="h-16 w-16 bg-rose-100 rounded-full flex items-center justify-center text-rose-600 mx-auto mb-6">
+            <ShieldCheck className="h-8 w-8" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Admin Panel Error</h2>
+          <p className="text-gray-600 mb-6 text-sm">The dashboard crashed. This usually means a component failed to render due to missing data.</p>
+          <pre className="bg-gray-50 p-4 rounded-xl text-left text-[10px] font-mono text-rose-500 overflow-auto mb-6 max-h-40">
+            {error.stack || error.message}
+          </pre>
+          <Button onClick={() => window.location.reload()} className="w-full bg-[#1B5E20]">Reload Dashboard</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#F3F4F6] font-sans flex flex-col md:flex-row">
