@@ -55,7 +55,11 @@ app.use((req, res, next) => {
   if (req.url.includes('.php')) {
     req.url = req.url.replace(/\.php(\?|$)/, '$1');
   }
-  // Bridge /admin/login to /api/login
+  // Bridge any /login path to /api/login
+  if (req.url.endsWith('/login') && !req.url.startsWith('/api')) {
+    req.url = '/api/login';
+  }
+  // Bridge /admin/login specifically
   if (req.url.includes('/admin/login') && !req.url.startsWith('/api')) {
     req.url = '/api/login';
   }
