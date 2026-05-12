@@ -1189,7 +1189,8 @@ async function startServer() {
   const handleLogin = async (req: any, res: any) => {
     const { username, password } = req.body;
     try {
-      const [rows]: any = await pool.query("SELECT * FROM admin_users WHERE username = ?", [username]);
+      // Use ILIKE for case-insensitive username check in Postgres
+      const [rows]: any = await pool.query("SELECT * FROM admin_users WHERE username ILIKE ?", [username]);
       if (rows.length > 0) {
         const user = rows[0];
         // Resilient check for both 'passwordHash' and 'passwordhash' (Postgres fallback)
@@ -1216,8 +1217,14 @@ async function startServer() {
 
   app.get("/api/health", async (req, res) => {
     try {
-      const [rows]: any = await pool.query("SELECT count(*) as count FROM admin_users");
-      res.json({ status: "ok", database: "connected", adminCount: rows[0].count });
+      const [rows]: any = await pool.query("SELECT username FROM admin_users LIMIT 1");
+      const [countRows]: any = await pool.query("SELECT count(*) as count FROM admin_users");
+      res.json({ 
+        status: "ok", 
+        database: "connected", 
+        adminCount: countRows[0].count,
+        firstAdmin: rows.length > 0 ? rows[0].username : "none"
+      });
     } catch (e: any) {
       res.status(500).json({ status: "error", database: "disconnected", error: e.message });
     }
