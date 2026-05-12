@@ -73,70 +73,46 @@ export const db = {
         pgSql += " RETURNING id";
       }
 
-      const result = await pgPool.query(pgSql, params);
-      
-      // Map results to match expected casing and handle BigInts
-      const rows = result.rows.map(row => {
-        const newRow: any = {};
-        for (const key in row) {
-          let val = row[key];
-          // Convert stringy numbers (like COUNT results) to Numbers
-          if (typeof val === 'string' && /^\d+$/.test(val) && val.length < 15) {
-            val = Number(val);
+      try {
+        const result = await pgPool.query(pgSql, params);
+        
+        // Map results to match expected casing and handle BigInts
+        const rows = result.rows.map(row => {
+          const newRow: any = {};
+          for (const key in row) {
+            let val = row[key];
+            if (typeof val === 'string' && /^\d+$/.test(val) && val.length < 15) {
+              val = Number(val);
+            }
+            
+            let newKey = key;
+            const mappings: any = {
+              'passwordhash': 'passwordHash',
+              'customername': 'customerName',
+              'totalamount': 'totalAmount',
+              'paymentmethod': 'paymentMethod',
+              'paymentid': 'paymentId',
+              'originalprice': 'originalPrice',
+              'seotitle': 'seoTitle',
+              'seodescription': 'seoDescription',
+              'seokeywords': 'seoKeywords',
+              'key_name': 'key_name',
+              'key_value': 'key_value'
+            };
+            if (mappings[key]) newKey = mappings[key];
+            newRow[newKey] = val;
           }
-          
-          let newKey = key;
-          // Map common mixed-case keys expected by the frontend/server
-          const mappings: any = {
-            'passwordhash': 'passwordHash',
-            'customername': 'customerName',
-            'totalamount': 'totalAmount',
-            'paymentmethod': 'paymentMethod',
-            'paymentid': 'paymentId',
-            'originalprice': 'originalPrice',
-            'seotitle': 'seoTitle',
-            'seodescription': 'seoDescription',
-            'seokeywords': 'seoKeywords',
-            'rating_override': 'rating_override',
-            'bought_count': 'bought_count',
-            'about_items': 'about_items',
-            'purity_profile': 'purity_profile',
-            'product_info': 'product_info',
-            'promocodeid': 'promoCodeId',
-            'discounttype': 'discountType',
-            'discountvalue': 'discountValue',
-            'minspend': 'minSpend',
-            'expirydate': 'expiryDate',
-            'joindate': 'joinDate',
-            'totalspent': 'totalSpent',
-            'orderscount': 'ordersCount',
-            'key_name': 'key_name',
-            'key_value': 'key_value',
-            'productid': 'productId',
-            'nextbillingdate': 'nextBillingDate',
-            'discount_percent': 'discount_percent',
-            'discount_amount': 'discount_amount',
-            'is_active': 'is_active',
-            'is_read': 'is_read',
-            'created_at': 'created_at',
-            'admin_user': 'admin_user',
-            'entity_type': 'entity_type',
-            'entity_id': 'entity_id',
-            'recipients_count': 'recipients_count',
-            'sent_at': 'sent_at',
-            'videourl': 'videoUrl',
-            'thumbnailurl': 'thumbnailUrl'
-          };
-          if (mappings[key]) newKey = mappings[key];
-          newRow[newKey] = val;
-        }
-        return newRow;
-      });
+          return newRow;
+        });
 
-      if (sql.trim().toUpperCase().startsWith("SELECT") || sql.trim().toUpperCase().startsWith("SHOW")) {
-        return [rows, result.fields];
-      } else {
-        return [{ insertId: (rows[0] as any)?.id || null, affectedRows: result.rowCount }];
+        if (sql.trim().toUpperCase().startsWith("SELECT") || sql.trim().toUpperCase().startsWith("SHOW")) {
+          return [rows, result.fields];
+        } else {
+          return [{ insertId: (rows[0] as any)?.id || null, affectedRows: result.rowCount }];
+        }
+      } catch (err: any) {
+        console.error("Postgres Query Error:", err.message, "SQL:", pgSql.substring(0, 100));
+        throw err;
       }
     } else if (isSQLite && sqliteDb) {
       const normalizedSql = sql
