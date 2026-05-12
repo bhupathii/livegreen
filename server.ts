@@ -3,7 +3,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import jwt from "jsonwebtoken";
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 import Razorpay from "razorpay";
 import { db as pool } from "./src/lib/db.js";
 import { ICarryClient } from "./src/lib/icarry.js";
