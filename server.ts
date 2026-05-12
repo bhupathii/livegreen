@@ -1025,8 +1025,8 @@ async function startServer() {
       const finalAmount = Math.max(0, subtotal - discount + (Number(shippingCost) || 0));
       
       // 2. Initialize Razorpay
-      const rzpKey = await getSetting('razorpay_key');
-      const rzpSecret = await getSetting('razorpay_secret');
+      const rzpKey = await getSetting('razorpay_key') || process.env.RAZORPAY_KEY;
+      const rzpSecret = await getSetting('razorpay_secret') || process.env.RAZORPAY_SECRET;
 
       if (!rzpKey || !rzpSecret) {
         return res.status(500).json({ success: false, error: "Razorpay keys not configured" });
@@ -1075,7 +1075,7 @@ async function startServer() {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
     
     try {
-      const rzpSecret = await getSetting('razorpay_secret');
+      const rzpSecret = await getSetting('razorpay_secret') || process.env.RAZORPAY_SECRET;
       if (!rzpSecret) throw new Error("Razorpay secret not found");
 
       const hmac = crypto.createHmac('sha256', rzpSecret);
