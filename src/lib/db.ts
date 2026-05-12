@@ -21,27 +21,28 @@ if (isPostgres) {
   console.log("Using PostgreSQL (Supabase)");
   pgPool = new pg.Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: {
-      rejectUnauthorized: false // Required for Supabase
-    }
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 10000, // 10s timeout
   });
 } else if (isSQLite) {
   console.log("Using SQLite fallback");
   sqliteDb = new sqlite(path.resolve(__dirname, "../../honey.db"));
   sqliteDb.pragma('journal_mode = WAL');
-} else {
+} else if (process.env.DB_HOST) {
   console.log("Using MySQL");
   const dbConfig = {
-    host: process.env.DB_HOST || '82.25.121.98',
-    user: process.env.DB_USER || 'u711900092_livegreen',
-    password: process.env.DB_PASSWORD || 'Livegreen@2025',
-    database: process.env.DB_NAME || 'u711900092_livegreen',
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
     multipleStatements: true
   };
   mysqlPool = mysql.createPool(dbConfig);
+} else {
+  console.error("NO DATABASE CONFIGURATION FOUND! Please set DATABASE_URL or DB_HOST.");
 }
 
 export const db = {
