@@ -267,6 +267,49 @@ async function initDB() {
     await pool.query(tableSql);
   }
 
+  // Ensure products table has all columns (Migration support)
+  const [columnRows]: any = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'products'");
+  const columnNames = columnRows.map((c: any) => c.column_name.toLowerCase());
+  
+  const expectedColumns = [
+    { name: 'stock', type: 'INT DEFAULT 100' },
+    { name: 'seoTitle', type: 'VARCHAR(255)' },
+    { name: 'seoDescription', type: 'TEXT' },
+    { name: 'seoKeywords', type: 'TEXT' },
+    { name: 'subtitle', type: 'VARCHAR(255)' },
+    { name: 'rating_override', type: 'DECIMAL(3,1)' },
+    { name: 'bought_count', type: 'VARCHAR(255)' },
+    { name: 'about_items', type: 'TEXT' },
+    { name: 'purity_profile', type: 'TEXT' },
+    { name: 'product_info', type: 'TEXT' },
+    { name: 'ribbon', type: 'TEXT' }
+  ];
+
+  for (const col of expectedColumns) {
+    if (!columnNames.includes(col.name.toLowerCase())) {
+      console.log(`Adding missing column ${col.name} to products table...`);
+      await pool.query(`ALTER TABLE products ADD COLUMN ${col.name} ${col.type}`);
+    }
+  }
+
+  // Ensure orders table has iCarry columns
+  const [orderColumnRows]: any = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'orders'");
+  const orderColumnNames = orderColumnRows.map((c: any) => c.column_name.toLowerCase());
+  const expectedOrderCols = [
+    { name: 'icarry_shipment_id', type: 'TEXT' },
+    { name: 'icarry_awb', type: 'TEXT' },
+    { name: 'icarry_tracking_url', type: 'TEXT' },
+    { name: 'icarry_status', type: 'TEXT' },
+    { name: 'is_subscription', type: 'INTEGER DEFAULT 0' },
+    { name: 'promoCodeId', type: 'INTEGER' }
+  ];
+
+  for (const col of expectedOrderCols) {
+    if (!orderColumnNames.includes(col.name.toLowerCase())) {
+      await pool.query(`ALTER TABLE orders ADD COLUMN ${col.name} ${col.type}`);
+    }
+  }
+
   // Seed default settings 
   const defaultSettings = [
     ['razorpay_key', process.env.RAZORPAY_KEY || ''],
@@ -283,13 +326,13 @@ async function initDB() {
   }
 
   const [adminCnt]: any = await pool.query("SELECT count(*) as count FROM admin_users");
-  if (adminCnt[0].count === 0) {
+  if (Number(adminCnt[0].count) === 0) {
     const defaultPass = await bcrypt.hash('password', 10);
     await pool.query("INSERT INTO admin_users (username, passwordHash) VALUES (?, ?) ON CONFLICT (username) DO NOTHING", ['admin', defaultPass]);
   }
 
   const [prodCnt]: any = await pool.query("SELECT count(*) as count FROM products");
-  if (prodCnt[0].count === 0) {
+  if (Number(prodCnt[0].count) === 0) {
     const seedProds = [
       ["Live Green Raw Honey (500g)", 599, 799, "Our signature honey is harvested from the deep forests of Uttarakhand, ensuring a rich taste and high nutritional value. It's never heated or processed, preserving all the natural enzymes and antioxidants.", "https://images.unsplash.com/photo-1587049352846-4a222e784d38?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80", JSON.stringify(["100% Raw & Unprocessed", "Rich in Antioxidants", "Boosts Immunity", "Sourced from Sustainable Farms"]), "Raw Honey"],
       ["Wild Forest Honey (350g)", 449, 599, "Collected from the wild forests of the Western Ghats, this dark amber honey has a bold, complex flavor profile with notes of wild herbs and flowers. Perfect for those who love intense flavors.", "https://images.unsplash.com/photo-1558642452-9d2a7deb7f62?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80", JSON.stringify(["Wild Harvested", "Dark Amber Color", "Complex Flavor Profile", "High Mineral Content"]), "Wild Honey"],
@@ -553,13 +596,13 @@ async function startServer() {
   app.post("/api/products", verifyAdmin, async (req, res) => {
     const { 
       name, price, originalPrice, description, image, features, category, stock, seoTitle, seoDescription, seoKeywords,
-      subtitle, rating_override, bought_count, about_items, purity_profile, product_info
+      subtitle, rating_override, bought_count, about_items, purity_profile, product_info, ribbon
     } = req.body;
     const [info]: any = await pool.query(
-      "INSERT INTO products (name, price, originalPrice, description, image, features, category, stock, seoTitle, seoDescription, seoKeywords, subtitle, rating_override, bought_count, about_items, purity_profile, product_info) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO products (name, price, originalPrice, description, image, features, category, stock, seoTitle, seoDescription, seoKeywords, subtitle, rating_override, bought_count, about_items, purity_profile, product_info, ribbon) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         name, price, originalPrice, description, image, JSON.stringify(features || []), category, stock ?? 100, seoTitle, seoDescription, seoKeywords,
-        subtitle, rating_override, bought_count, JSON.stringify(about_items || []), JSON.stringify(purity_profile || {}), JSON.stringify(product_info || {})
+        subtitle, rating_override, bought_count, JSON.stringify(about_items || []), JSON.stringify(purity_profile || {}), JSON.stringify(product_info || {}), ribbon
       ]
     );
     const newId = info.insertId || info.lastID;
@@ -570,14 +613,14 @@ async function startServer() {
   app.put("/api/products/:id", verifyAdmin, async (req, res) => {
     const { 
       name, price, originalPrice, description, image, features, category, stock, seoTitle, seoDescription, seoKeywords,
-      subtitle, rating_override, bought_count, about_items, purity_profile, product_info
+      subtitle, rating_override, bought_count, about_items, purity_profile, product_info, ribbon
     } = req.body;
     await pool.query(
-      "UPDATE products SET name = ?, price = ?, originalPrice = ?, description = ?, image = ?, features = ?, category = ?, stock = ?, seoTitle = ?, seoDescription = ?, seoKeywords = ?, subtitle = ?, rating_override = ?, bought_count = ?, about_items = ?, purity_profile = ?, product_info = ? WHERE id = ?",
+      "UPDATE products SET name = ?, price = ?, originalPrice = ?, description = ?, image = ?, features = ?, category = ?, stock = ?, seoTitle = ?, seoDescription = ?, seoKeywords = ?, subtitle = ?, rating_override = ?, bought_count = ?, about_items = ?, purity_profile = ?, product_info = ?, ribbon = ? WHERE id = ?",
       [
         name, price, originalPrice, description, image, JSON.stringify(features || []), category, stock ?? 100, seoTitle, seoDescription, seoKeywords,
         subtitle, rating_override, bought_count, JSON.stringify(about_items || []), JSON.stringify(purity_profile || {}), JSON.stringify(product_info || {}),
-        req.params.id
+        ribbon, req.params.id
       ]
     );
     await logAudit((req as any).user.username, 'UPDATE_PRODUCT', 'product', req.params.id, `Updated ${name}`, req.ip);

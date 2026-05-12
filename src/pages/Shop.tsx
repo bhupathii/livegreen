@@ -32,7 +32,7 @@ export default function Shop() {
   }, [activeCategory, products]);
 
   const categories = ["All", ...Array.from(new Set(products.map(p => p.category)))];
-  const filtered = (activeCategory === "All" ? products : products.filter(p => p.category === activeCategory)).filter(p => p.stock > 0);
+  const filtered = activeCategory === "All" ? products : products.filter(p => p.category === activeCategory);
 
   const handleAddToCart = (e: React.MouseEvent, product: Product) => {
     e.preventDefault();
