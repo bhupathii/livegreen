@@ -22,15 +22,54 @@ import { Button } from "@/components/ui/button";
 
 type TabId = 'dashboard' | 'orders' | 'customers' | 'products' | 'blogs' | 'promos' | 'inquiries' | 'reviews' | 'google-reviews' | 'video-testimonials' | 'referrals' | 'subscriptions' | 'audit-log' | 'email-campaigns';
 
+class AdminErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: Error | null }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("Admin Dashboard Crash:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-rose-50 flex items-center justify-center p-6 font-sans">
+          <div className="bg-white p-8 rounded-3xl shadow-xl max-w-2xl w-full border border-rose-100 text-center">
+            <div className="h-16 w-16 bg-rose-100 rounded-full flex items-center justify-center text-rose-600 mx-auto mb-6">
+              <ShieldCheck className="h-8 w-8" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">Dashboard Render Error</h2>
+            <p className="text-gray-600 mb-6 text-sm">The admin panel failed to render. This is usually due to missing data or an incompatible component.</p>
+            <div className="bg-gray-50 p-4 rounded-xl text-left text-[10px] font-mono text-rose-500 overflow-auto mb-6 max-h-60 border border-rose-50">
+              {this.state.error?.stack || this.state.error?.message}
+            </div>
+            <div className="flex gap-4">
+               <Button onClick={() => window.location.reload()} className="flex-1 bg-[#1B5E20]">Retry Page</Button>
+               <Button onClick={() => { localStorage.clear(); window.location.href='/admin'; }} variant="outline" className="flex-1">Clear Cache & Reset</Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function Admin() {
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated } = useAuth();
 
   if (!isAuthenticated) return <AdminLogin />;
 
   return (
-    <div className="admin-diagnostics">
+    <AdminErrorBoundary>
       <AdminDashboardContent />
-    </div>
+    </AdminErrorBoundary>
   );
 }
 
@@ -38,15 +77,7 @@ function AdminDashboardContent() {
   const { logout } = useAuth();
   const [activeTab, setActiveTab] = useState<TabId | 'settings'>('dashboard');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
   const navigate = useNavigate();
-
-  // Simple local error boundary effect
-  useEffect(() => {
-    const handleError = (e: ErrorEvent) => setError(e.error);
-    window.addEventListener('error', handleError);
-    return () => window.removeEventListener('error', handleError);
-  }, []);
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
@@ -74,24 +105,6 @@ function AdminDashboardContent() {
     { id: 'audit-log', label: 'Audit Log', icon: History },
     { id: 'settings', label: 'Settings', icon: SettingsIcon },
   ] as const;
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-rose-50 flex items-center justify-center p-6">
-        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-md w-full border border-rose-100 text-center">
-          <div className="h-16 w-16 bg-rose-100 rounded-full flex items-center justify-center text-rose-600 mx-auto mb-6">
-            <ShieldCheck className="h-8 w-8" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Admin Panel Error</h2>
-          <p className="text-gray-600 mb-6 text-sm">The dashboard crashed. This usually means a component failed to render due to missing data.</p>
-          <pre className="bg-gray-50 p-4 rounded-xl text-left text-[10px] font-mono text-rose-500 overflow-auto mb-6 max-h-40">
-            {error.stack || error.message}
-          </pre>
-          <Button onClick={() => window.location.reload()} className="w-full bg-[#1B5E20]">Reload Dashboard</Button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#F3F4F6] font-sans flex flex-col md:flex-row">

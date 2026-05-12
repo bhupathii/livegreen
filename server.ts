@@ -9,6 +9,7 @@ import { db as pool } from "./src/lib/db.js";
 import { ICarryClient } from "./src/lib/icarry.js";
 import multer from "multer";
 import fs from "fs";
+import crypto from "crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -1070,7 +1071,6 @@ async function startServer() {
     }
   });
 
-  // Razorpay Payment Verification
   app.post("/api/verify_razorpay_payment", async (req, res) => {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
     
@@ -1078,19 +1078,54 @@ async function startServer() {
       const rzpSecret = await getSetting('razorpay_secret');
       if (!rzpSecret) throw new Error("Razorpay secret not found");
 
-      const crypto = await import("crypto");
       const hmac = crypto.createHmac('sha256', rzpSecret);
       hmac.update(razorpay_order_id + "|" + razorpay_payment_id);
       const generatedSignature = hmac.digest('hex');
 
       if (generatedSignature === razorpay_signature) {
-        await pool.query("UPDATE orders SET status = 'processing', paymentId = ? WHERE id = ?", [razorpay_payment_id, razorpay_order_id]);
-        await logAudit('system', 'PAYMENT_VERIFIED', 'order', razorpay_order_id, `Payment ${razorpay_payment_id} verified`, req.ip);
-        res.json({ success: true });
+        // 1. Get order details
+        const [orders]: any = await pool.query("SELECT * FROM orders WHERE id = ?", [razorpay_order_id]);
+        if (orders.length === 0) throw new Error("Order not found");
+        const order = orders[0];
+
+        const connection = await pool.getConnection();
+        try {
+          await connection.beginTransaction();
+
+          // 2. Update order status
+          await connection.query("UPDATE orders SET status = 'processing', paymentId = ? WHERE id = ?", [razorpay_payment_id, razorpay_order_id]);
+          
+          // 3. Customer logic
+          const [existingCust]: any = await connection.query("SELECT * FROM customers WHERE email = ?", [order.email]);
+          if (existingCust.length > 0) {
+            await connection.query("UPDATE customers SET totalSpent = totalSpent + ?, ordersCount = ordersCount + 1 WHERE email = ?", [order.totalAmount, order.email]);
+          } else {
+            await connection.query("INSERT INTO customers (name, email, phone, totalSpent, ordersCount, joinDate) VALUES (?, ?, ?, ?, ?, ?)",
+              [order.customerName, order.email, order.phone, order.totalAmount, 1, order.date]);
+          }
+
+          // 4. Stock logic
+          const items = JSON.parse(order.items);
+          for (const item of items) {
+            await connection.query("UPDATE products SET stock = GREATEST(0, stock - ?) WHERE id = ?", [item.quantity, item.id]);
+          }
+
+          // 5. Audit Log
+          await logAudit('system', 'PAYMENT_VERIFIED', 'order', razorpay_order_id, `Payment ${razorpay_payment_id} verified. Stock updated and customer stats refreshed.`, req.ip || '0.0.0.0');
+
+          await connection.commit();
+          res.json({ success: true });
+        } catch (dbErr: any) {
+          await connection.rollback();
+          throw dbErr;
+        } finally {
+          connection.release();
+        }
       } else {
         res.status(400).json({ success: false, error: "Invalid signature" });
       }
     } catch (e: any) {
+      console.error("Verification Error:", e);
       res.status(500).json({ success: false, error: e.message });
     }
   });
