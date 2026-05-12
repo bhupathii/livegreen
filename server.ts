@@ -185,7 +185,7 @@ async function initDB() {
   ];
 
   for (const col of missingColumns) {
-    if (!columnNames.includes(col.name)) {
+    if (!columnNames.some(c => c.toLowerCase() === col.name.toLowerCase())) {
       await pool.query(`ALTER TABLE products ADD COLUMN ${col.name} ${col.type}`);
     }
   }
@@ -213,7 +213,7 @@ async function initDB() {
   ];
 
   for (const col of missingOrderColumns) {
-    if (!orderColumns.includes(col.name)) {
+    if (!orderColumns.some(c => c.toLowerCase() === col.name.toLowerCase())) {
       await pool.query(`ALTER TABLE orders ADD COLUMN ${col.name} ${col.type}`);
     }
   }
