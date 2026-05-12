@@ -255,11 +255,14 @@ async function initDB() {
     )`,
     `CREATE TABLE IF NOT EXISTS video_testimonials (
       id SERIAL PRIMARY KEY,
+      name VARCHAR(255),
+      location VARCHAR(255),
       title VARCHAR(255),
-      videoUrl TEXT,
-      thumbnailUrl TEXT,
-      author VARCHAR(100),
-      status VARCHAR(50) DEFAULT 'active'
+      duration VARCHAR(50),
+      thumbnail_url TEXT,
+      video_url TEXT,
+      status VARCHAR(50) DEFAULT 'active',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )`
   ];
 
@@ -385,8 +388,8 @@ async function startServer() {
   app.get("/api/dashboard_analytics", verifyAdmin, async (req, res) => {
     const { from, to } = req.query;
     try {
-      const [revRows]: any = await pool.query("SELECT SUM(totalAmount) as revenue, COUNT(*) as ordersCount FROM orders WHERE status != 'cancelled' AND date BETWEEN ? AND ?", [from, to]);
-      const [prevRevRows]: any = await pool.query("SELECT SUM(totalAmount) as revenue FROM orders WHERE status != 'cancelled' AND date < ?", [from]);
+      const [revRows]: any = await pool.query("SELECT SUM(totalAmount) as revenue, COUNT(*) as ordersCount FROM orders WHERE status != 'cancelled' AND SUBSTRING(date, 1, 10) BETWEEN ? AND ?", [from, to]);
+      const [prevRevRows]: any = await pool.query("SELECT SUM(totalAmount) as revenue FROM orders WHERE status != 'cancelled' AND SUBSTRING(date, 1, 10) < ?", [from]);
       
       const revenue = revRows[0].revenue || 0;
       const totalOrders = revRows[0].ordersCount || 0;
@@ -394,7 +397,7 @@ async function startServer() {
       const revenueChange = prevRevenue === 0 ? 100 : ((revenue - prevRevenue) / prevRevenue) * 100;
 
       const [statusRows]: any = await pool.query("SELECT status, COUNT(*) as count FROM orders GROUP BY status");
-      const [revenueTrend]: any = await pool.query("SELECT SUBSTR(date, 1, 10) as date, SUM(totalAmount) as revenue, COUNT(*) as orders FROM orders WHERE status != 'cancelled' GROUP BY SUBSTR(date, 1, 10) ORDER BY date DESC LIMIT 30");
+      const [revenueTrend]: any = await pool.query("SELECT SUBSTRING(date, 1, 10) as date, SUM(totalAmount) as revenue, COUNT(*) as orders FROM orders WHERE status != 'cancelled' GROUP BY SUBSTRING(date, 1, 10) ORDER BY date DESC LIMIT 30");
 
       res.json({
         revenue,
@@ -497,8 +500,52 @@ async function startServer() {
 
   // Video Testimonials
   app.get("/api/video_testimonials", async (req, res) => {
-    const [rows]: any = await pool.query("SELECT * FROM video_testimonials WHERE status = 'active'");
-    res.json(rows);
+    try {
+      const [rows]: any = await pool.query("SELECT * FROM video_testimonials ORDER BY created_at DESC");
+      res.json(rows);
+    } catch (e) { res.status(500).json({ error: 'DB Error' }); }
+  });
+
+  app.post("/api/video_testimonials", verifyAdmin, upload.fields([{ name: 'video', maxCount: 1 }]), async (req: any, res) => {
+    try {
+      const { id, name, location, title, duration, thumbnail_url } = req.body;
+      let video_url = req.body.video_url;
+
+      if (req.files && req.files['video']) {
+        video_url = `/uploads/${req.files['video'][0].filename}`;
+      }
+
+      if (id) {
+        await pool.query(
+          "UPDATE video_testimonials SET name = ?, location = ?, title = ?, duration = ?, thumbnail_url = ?, video_url = ? WHERE id = ?",
+          [name, location, title, duration, thumbnail_url, video_url, id]
+        );
+      } else {
+        await pool.query(
+          "INSERT INTO video_testimonials (name, location, title, duration, thumbnail_url, video_url) VALUES (?, ?, ?, ?, ?, ?)",
+          [name, location, title, duration, thumbnail_url, video_url]
+        );
+      }
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: 'DB Error' }); }
+  });
+
+  app.delete("/api/video_testimonials", verifyAdmin, async (req, res) => {
+    try {
+      const { id } = req.query;
+      await pool.query("DELETE FROM video_testimonials WHERE id = ?", [id]);
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: 'DB Error' }); }
+  });
+
+  // Waitlist
+  app.post("/api/waitlist", async (req, res) => {
+    const { email, productId } = req.body;
+    try {
+      await pool.query("CREATE TABLE IF NOT EXISTS waitlist (id SERIAL PRIMARY KEY, email VARCHAR(255), product_id INT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+      await pool.query("INSERT INTO waitlist (email, product_id) VALUES (?, ?)", [email, productId]);
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: 'DB Error' }); }
   });
 
   // Settings API (Duplicate Cleanup - handled above)
@@ -516,17 +563,42 @@ async function startServer() {
 
   // Google Reviews
   app.get("/api/google_reviews", async (req, res) => {
-    const [rows]: any = await pool.query("SELECT * FROM reviews WHERE rating >= 4 AND status = 'approved' ORDER BY date DESC LIMIT 10");
-    res.json({ 
-      reviews: rows.map((r: any) => ({
-        id: r.id,
-        reviewerName: r.customerName,
-        rating: r.rating,
-        reviewText: r.comment,
-        reviewDate: r.date
-      })), 
-      aggregate: { rating: "4.9", totalReviews: "128", mapsUrl: "#" } 
-    });
+    try {
+      const [rows]: any = await pool.query("SELECT * FROM google_reviews WHERE isVisible = 1 ORDER BY created_at DESC");
+      res.json({ 
+        reviews: rows,
+        aggregate: { rating: "4.9", totalReviews: String(rows.length + 120), mapsUrl: "https://g.page/livegreenhoney/review" } 
+      });
+    } catch (e) { res.status(500).json({ error: 'DB Error' }); }
+  });
+
+  app.post("/api/google_reviews", verifyAdmin, async (req, res) => {
+    try {
+      const { reviewerName, rating, reviewText, reviewDate, product_id, isVisible } = req.body;
+      const [result]: any = await pool.query(
+        "INSERT INTO google_reviews (reviewerName, rating, reviewText, reviewDate, product_id, isVisible) VALUES (?, ?, ?, ?, ?, ?)",
+        [reviewerName, rating, reviewText, reviewDate, product_id, isVisible ?? 1]
+      );
+      res.json({ success: true, id: result.insertId });
+    } catch (e) { res.status(500).json({ error: 'DB Error' }); }
+  });
+
+  app.put("/api/google_reviews/:id", verifyAdmin, async (req, res) => {
+    try {
+      const { reviewerName, rating, reviewText, reviewDate, product_id, isVisible } = req.body;
+      await pool.query(
+        "UPDATE google_reviews SET reviewerName = ?, rating = ?, reviewText = ?, reviewDate = ?, product_id = ?, isVisible = ? WHERE id = ?",
+        [reviewerName, rating, reviewText, reviewDate, product_id, isVisible, req.params.id]
+      );
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: 'DB Error' }); }
+  });
+
+  app.delete("/api/google_reviews/:id", verifyAdmin, async (req, res) => {
+    try {
+      await pool.query("DELETE FROM google_reviews WHERE id = ?", [req.params.id]);
+      res.json({ success: true });
+    } catch (e) { res.status(500).json({ error: 'DB Error' }); }
   });
 
   // Active Promos API
@@ -537,15 +609,6 @@ async function startServer() {
     } catch (e) { res.status(500).json({ error: 'DB Error' }); }
   });
 
-  // Google Reviews Stub
-  app.get("/api/google_reviews", async (req, res) => {
-    res.json({ reviews: [], aggregate: { rating: "5.0", totalReviews: "0", mapsUrl: "#" } });
-  });
-
-  // Video Testimonials Stub
-  app.get("/api/video_testimonials", async (req, res) => {
-    res.json([]);
-  });
 
   // Settings API (Protected) - Unified
   app.get(["/api/admin/settings", "/api/settings"], verifyAdmin, async (req, res) => {
@@ -557,10 +620,11 @@ async function startServer() {
 
   app.put(["/api/admin/settings", "/api/settings"], verifyAdmin, async (req, res) => {
     const { key_name, key_value } = req.body;
-    const isPg = (pool as any).isPostgres;
-    const isSqlite = (pool as any).isSQLite;
     try {
-      await pool.query("INSERT INTO app_settings (key_name, key_value) VALUES (?, ?) ON CONFLICT (key_name) DO UPDATE SET key_value = EXCLUDED.key_value", [key_name, key_value]);
+      await pool.query(
+        "INSERT INTO app_settings (key_name, key_value) VALUES (?, ?) ON CONFLICT (key_name) DO UPDATE SET key_value = EXCLUDED.key_value",
+        [key_name, key_value]
+      );
       await logAudit((req as any).user.username, 'UPDATE_SETTING', 'setting', key_name, `Updated ${key_name}`, req.ip);
       res.json({ success: true });
     } catch (e) { res.status(500).json({ error: 'DB Error' }); }

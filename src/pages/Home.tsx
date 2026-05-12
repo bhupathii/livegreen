@@ -76,7 +76,7 @@ export default function Home() {
   const [videoTestimonials, setVideoTestimonials] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/public_settings.php')
+    fetch('/api/public_settings')
       .then(r => r.json())
       .then(data => {
         setSiteSettings(data);
@@ -87,7 +87,7 @@ export default function Home() {
   useEffect(() => {
     const fetchVideos = async () => {
       try {
-        const response = await fetch('/api/video_testimonials.php');
+        const response = await fetch('/api/video_testimonials');
         const text = await response.text();
 
         // Strip out any PHP warnings or HTML before the JSON begins

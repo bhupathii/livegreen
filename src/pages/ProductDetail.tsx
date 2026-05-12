@@ -44,7 +44,7 @@ export default function ProductDetail() {
     if (!product || !waitlistEmail) return;
     setWaitlistStatus("loading");
     try {
-      const res = await fetch("/api/waitlist.php", {
+      const res = await fetch("/api/waitlist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ product_id: product.id, email: waitlistEmail })

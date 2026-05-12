@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash, X, Loader2, Video, Search } from 'lucide-react';
+import Cookies from 'js-cookie';
 
 interface VideoTestimonial {
     id: number;
@@ -8,7 +9,6 @@ interface VideoTestimonial {
     title: string;
     duration: string;
     thumbnail_url?: string;
-    thumbnail?: string;
     video_url: string;
     created_at?: string;
 }
@@ -37,7 +37,7 @@ export default function VideoTestimonialsTab() {
 
     const fetchVideos = async () => {
         try {
-            const response = await fetch('/api/video_testimonials.php');
+            const response = await fetch('/api/video_testimonials');
             const data = await response.json();
             if (Array.isArray(data)) {
                 setVideos(data);
@@ -100,14 +100,14 @@ export default function VideoTestimonialsTab() {
                 return;
             }
 
-            const token = localStorage.getItem('adminToken');
+            const token = Cookies.get('admin_token');
 
-            const response = await fetch('/api/video_testimonials.php', {
+            const response = await fetch('/api/video_testimonials', {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`
                 },
-                body: data // FormData automatically sets the correct multipart/form-data boundary
+                body: data 
             });
 
             const result = await response.json();
@@ -130,8 +130,8 @@ export default function VideoTestimonialsTab() {
         if (!window.confirm('Are you sure you want to delete this video testimonial? This will also delete the video file from the server.')) return;
 
         try {
-            const token = localStorage.getItem('adminToken');
-            const response = await fetch(`/api/video_testimonials.php?id=${id}`, {
+            const token = Cookies.get('admin_token');
+            const response = await fetch(`/api/video_testimonials?id=${id}`, {
                 method: 'DELETE',
                 headers: {
                     'Authorization': `Bearer ${token}`
