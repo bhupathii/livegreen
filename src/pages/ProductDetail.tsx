@@ -69,17 +69,26 @@ export default function ProductDetail() {
         return;
       }
 
-      Promise.all([
-        getProduct(productId).then(setProduct),
-        getProductReviews(productId).then(setReviews),
-        getGoogleReviews().then(res => setGoogleReviews(res.reviews.filter(r => r.product_id === productId))),
-        getProducts().then((prods) => {
-          setRelatedProducts(prods.filter(p => p.id !== productId && p.stock > 0).slice(0, 4));
+      getProduct(productId)
+        .then(async (prod) => {
+          setProduct(prod);
+          
+          getProductReviews(productId)
+            .then(setReviews)
+            .catch(e => console.error("Reviews failed", e));
+            
+          getGoogleReviews()
+            .then(res => setGoogleReviews(res.reviews.filter(r => r.product_id === productId)))
+            .catch(e => console.error("Google reviews failed", e));
+            
+          getProducts()
+            .then((prods) => setRelatedProducts(prods.filter(p => p.id !== productId && p.stock > 0).slice(0, 4)))
+            .catch(e => console.error("Related products failed", e));
         })
-      ]).catch(err => {
-        console.error("Error loading product data:", err);
-        setError("Failed to load product details. Please try again later.");
-      });
+        .catch(err => {
+          console.error("Error loading product data:", err);
+          setError("Failed to load product details. Please try again later.");
+        });
     }
     setQuantity(1);
     setSelectedImage(0);
