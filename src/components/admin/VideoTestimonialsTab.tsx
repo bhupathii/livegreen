@@ -9,6 +9,7 @@ interface VideoTestimonial {
     title: string;
     duration: string;
     thumbnail_url?: string;
+    thumbnail?: string;
     video_url: string;
     created_at?: string;
 }

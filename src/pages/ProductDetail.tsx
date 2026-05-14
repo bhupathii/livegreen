@@ -236,7 +236,7 @@ export default function ProductDetail() {
                   <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
                     <button onClick={() => toggleWishlist(product.id)}
                       className="h-10 w-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-lg cursor-pointer transition-all hover:scale-110 border border-gray-100">
-                      <Heart className={`h - 4 w - 4 ${isInWishlist(product.id) ? 'fill-red-500 text-red-500' : 'text-gray-300'} `} />
+                      <Heart className={`h-4 w-4 ${isInWishlist(product.id) ? 'fill-red-500 text-red-500' : 'text-gray-300'} `} />
                     </button>
                     <button
                       onClick={() => window.open(`https://wa.me/?text=Check%20out%20this%20amazing%20${encodeURIComponent(product.name)}%20from%20Live%20Green!%20%0A${encodeURIComponent(window.location.href)}`, '_blank')}
