@@ -29,7 +29,7 @@ export class ICarryClient {
         }]
       });
 
-      console.log('iCarry Login Response:', response.data);
+      console.log('iCarry Login: token acquired successfully');
 
       if (response.data && response.data.api_token) {
         this.token = response.data.api_token;
@@ -56,7 +56,7 @@ export class ICarryClient {
     shipment_value?: number;
   }) {
     const token = await this.login();
-    const url = `${this.baseUrl}/api_get_estimate&api_token=${token}`;
+    const url = `${this.baseUrl}/api_get_estimate?api_token=${token}`;
     
     try {
       const response = await axios.post(url, {
@@ -85,7 +85,7 @@ export class ICarryClient {
     let endpoint = '/api_add_shipment_surface';
     if (mode === 'air') endpoint = '/api_add_shipment_air';
     
-    const url = `${this.baseUrl}${endpoint}&api_token=${token}`;
+    const url = `${this.baseUrl}${endpoint}?api_token=${token}`;
 
     try {
       // Note: iCarry expects nested objects to be flat-key stringified for form-urlencoded
@@ -112,7 +112,7 @@ export class ICarryClient {
     // The snippet says "POST - use shipment_id from Book response."
     // It doesn't give a specific endpoint for tracking in the summary, but let's assume it follows the pattern.
     // Actually, common pattern is /api_track_shipment
-    const url = `${this.baseUrl}/api_track_shipment&api_token=${token}`;
+    const url = `${this.baseUrl}/api_track_shipment?api_token=${token}`;
 
     try {
       const response = await axios.post(url, { shipment_id: shipmentId }, {

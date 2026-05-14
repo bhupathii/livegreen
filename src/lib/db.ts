@@ -97,12 +97,66 @@ export const db = {
     if (!pgPool) throw new Error("Database not initialized");
     
     const client = await pgPool.connect();
+
+    // Apply the same SQL translation as pool.query() but using the dedicated client
+    const clientQuery = async (sql: string, params?: any[]): Promise<any> => {
+      let pgSql = sql;
+      if (params && params.length > 0) {
+        let count = 0;
+        pgSql = sql.replace(/\?/g, () => {
+          count++;
+          return `$${count}`;
+        });
+      }
+      pgSql = pgSql
+        .replace(/INSERT IGNORE/g, 'INSERT')
+        .replace(/INSERT OR IGNORE/g, 'INSERT')
+        .replace(/INT AUTO_INCREMENT/g, 'SERIAL')
+        .replace(/INTEGER PRIMARY KEY AUTOINCREMENT/g, 'SERIAL PRIMARY KEY');
+
+      const isInsert = pgSql.trim().toUpperCase().startsWith('INSERT');
+      if (isInsert && !pgSql.toUpperCase().includes('RETURNING')) {
+        pgSql += ' RETURNING id';
+      }
+
+      try {
+        const result = await client.query(pgSql, params);
+        const rows = result.rows.map((row: any) => {
+          const newRow: any = {};
+          for (const key in row) {
+            let val = row[key];
+            if (typeof val === 'string' && /^\d+$/.test(val) && val.length < 15) {
+              val = Number(val);
+            }
+            const mappings: any = {
+              passwordhash: 'passwordHash', customername: 'customerName',
+              totalamount: 'totalAmount', paymentmethod: 'paymentMethod',
+              paymentid: 'paymentId', originalprice: 'originalPrice',
+              seotitle: 'seoTitle', seodescription: 'seoDescription',
+              seokeywords: 'seoKeywords', key_name: 'key_name', key_value: 'key_value',
+            };
+            newRow[mappings[key] ?? key] = val;
+          }
+          return newRow;
+        });
+
+        if (sql.trim().toUpperCase().startsWith('SELECT') || sql.trim().toUpperCase().startsWith('SHOW')) {
+          return [rows, result.fields];
+        } else {
+          return [{ insertId: (rows[0] as any)?.id || null, affectedRows: result.rowCount }];
+        }
+      } catch (err: any) {
+        console.error('Postgres Client Query Error:', err.message, 'SQL:', pgSql.substring(0, 100));
+        throw err;
+      }
+    };
+
     return {
-      query: (sql: string, params?: any[]) => this.query(sql, params),
-      beginTransaction: async () => client.query("BEGIN"),
-      commit: async () => client.query("COMMIT"),
-      rollback: async () => client.query("ROLLBACK"),
-      release: () => client.release()
+      query: clientQuery,
+      beginTransaction: async () => client.query('BEGIN'),
+      commit: async () => client.query('COMMIT'),
+      rollback: async () => client.query('ROLLBACK'),
+      release: () => client.release(),
     };
   }
 };

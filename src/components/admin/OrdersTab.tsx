@@ -124,18 +124,21 @@ export function OrdersTab() {
                                                     onChange={(e) => handleUpdateStatus(order.id, order.status, e.target.value)}
                                                     className={`appearance-none bg-transparent outline-none cursor-pointer pl-3 pr-8 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider border 
                             ${order.status === 'delivered' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' :
+                                                            order.status === 'paid' ? 'border-teal-200 bg-teal-50 text-teal-700' :
                                                             order.status === 'processing' ? 'border-blue-200 bg-blue-50 text-blue-700' :
                                                                 order.status === 'shipped' ? 'border-purple-200 bg-purple-50 text-purple-700' :
                                                                     order.status === 'out_for_delivery' ? 'border-orange-200 bg-orange-50 text-orange-700' :
-                                                                        order.status === 'cancelled' ? 'border-rose-200 bg-rose-50 text-rose-700' :
+                                                                        order.status === 'cancelled' || order.status === 'failed' ? 'border-rose-200 bg-rose-50 text-rose-700' :
                                                                             'border-amber-200 bg-amber-50 text-amber-700'}`}
                                                 >
                                                     <option value="pending">Pending</option>
+                                                    <option value="paid">Paid</option>
                                                     <option value="processing">Processing</option>
                                                     <option value="shipped">Shipped</option>
                                                     <option value="out_for_delivery">Out for Delivery</option>
                                                     <option value="delivered">Delivered</option>
                                                     <option value="cancelled">Cancelled</option>
+                                                    <option value="failed">Failed</option>
                                                 </select>
                                             </td>
                                             <td className="px-6 py-4 text-center">

@@ -187,7 +187,7 @@ export interface Order {
   totalAmount: number;
   paymentMethod: string;
   paymentId?: string;
-  status: 'pending' | 'processing' | 'shipped' | 'out_for_delivery' | 'delivered' | 'cancelled';
+  status: 'pending' | 'paid' | 'processing' | 'shipped' | 'out_for_delivery' | 'delivered' | 'cancelled' | 'failed';
   is_subscription?: boolean;
   icarry_shipment_id?: string;
   icarry_awb?: string;
@@ -542,7 +542,7 @@ export async function adminLogin(username: string, password: string): Promise<{ 
 export interface TrackedOrder {
   id: string;
   customerName: string;
-  status: 'pending' | 'processing' | 'shipped' | 'out_for_delivery' | 'delivered' | 'cancelled';
+  status: 'pending' | 'paid' | 'processing' | 'shipped' | 'out_for_delivery' | 'delivered' | 'cancelled' | 'failed';
   date: string;
   items: { name: string; quantity: number; price: number; image?: string }[];
   totalAmount: number;

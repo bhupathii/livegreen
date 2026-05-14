@@ -551,11 +551,14 @@ async function startServer() {
 
   // Settings API (Duplicate Cleanup - handled above)
 
-  // Public Settings API
+  // Public Settings API — only safe/public keys exposed here
   app.get("/api/public_settings", async (req, res) => {
     try {
-      const [rows]: any = await pool.query("SELECT key_name, key_value FROM app_settings WHERE key_name IN (?, ?, ?)", 
-        ['razorpay_key', 'razorpay_secret', 'hf_api_key']); 
+      // SECURITY: only expose the public Razorpay key — NEVER the secret
+      const [rows]: any = await pool.query(
+        "SELECT key_name, key_value FROM app_settings WHERE key_name = ?",
+        ['razorpay_key']
+      );
       const settings: any = {};
       rows.forEach((r: any) => settings[r.key_name] = r.key_value);
       res.json(settings);
@@ -960,28 +963,6 @@ async function startServer() {
     }
   });
 
-  app.post("/api/icarry/estimate", async (req, res) => {
-    const icarryClient = await getICarryClient();
-    if (!icarryClient) return res.status(500).json({ error: "iCarry not configured" });
-    try {
-      const estimate = await icarryClient.getEstimate(req.body);
-      res.json(estimate);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  app.post("/api/icarry/track", async (req, res) => {
-    const icarryClient = await getICarryClient();
-    if (!icarryClient) return res.status(500).json({ error: "iCarry not configured" });
-    try {
-      const { shipment_id } = req.body;
-      const tracking = await icarryClient.trackShipment(shipment_id);
-      res.json(tracking);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
 
 
   // Customers
@@ -1088,44 +1069,112 @@ async function startServer() {
         if (orders.length === 0) throw new Error("Order not found");
         const order = orders[0];
 
+        // 2. Idempotency check — if already paid, don't process again
+        if (order.status === 'paid' || order.status === 'processing') {
+          console.log(`[Payment] Order ${razorpay_order_id} already processed — skipping duplicate verification`);
+          return res.json({ success: true });
+        }
+
         const connection = await pool.getConnection();
         try {
           await connection.beginTransaction();
 
-          // 2. Update order status
-          await connection.query("UPDATE orders SET status = 'processing', paymentId = ? WHERE id = ?", [razorpay_payment_id, razorpay_order_id]);
+          // 3. Update order status to 'paid'
+          await connection.query(
+            "UPDATE orders SET status = 'paid', paymentId = ? WHERE id = ?",
+            [razorpay_payment_id, razorpay_order_id]
+          );
           
-          // 3. Customer logic
+          // 4. Customer logic
           const [existingCust]: any = await connection.query("SELECT * FROM customers WHERE email = ?", [order.email]);
           if (existingCust.length > 0) {
-            await connection.query("UPDATE customers SET totalSpent = totalSpent + ?, ordersCount = ordersCount + 1 WHERE email = ?", [order.totalAmount, order.email]);
+            await connection.query(
+              "UPDATE customers SET totalSpent = totalSpent + ?, ordersCount = ordersCount + 1 WHERE email = ?",
+              [order.totalAmount, order.email]
+            );
           } else {
-            await connection.query("INSERT INTO customers (name, email, phone, totalSpent, ordersCount, joinDate) VALUES (?, ?, ?, ?, ?, ?)",
-              [order.customerName, order.email, order.phone, order.totalAmount, 1, order.date]);
+            await connection.query(
+              "INSERT INTO customers (name, email, phone, totalSpent, ordersCount, joinDate) VALUES (?, ?, ?, ?, ?, ?)",
+              [order.customerName, order.email, order.phone, order.totalAmount, 1, order.date]
+            );
           }
 
-          // 4. Stock logic
+          // 5. Stock deduction
           const items = JSON.parse(order.items);
           for (const item of items) {
-            await connection.query("UPDATE products SET stock = GREATEST(0, stock - ?) WHERE id = ?", [item.quantity, item.id]);
+            await connection.query(
+              "UPDATE products SET stock = GREATEST(0, stock - ?) WHERE id = ?",
+              [item.quantity, item.id]
+            );
           }
 
-          // 5. Audit Log
-          await logAudit('system', 'PAYMENT_VERIFIED', 'order', razorpay_order_id, `Payment ${razorpay_payment_id} verified. Stock updated and customer stats refreshed.`, req.ip || '0.0.0.0');
+          // 6. Audit Log
+          await logAudit(
+            'system', 'PAYMENT_VERIFIED', 'order', razorpay_order_id,
+            `Payment ${razorpay_payment_id} verified. Order marked paid.`,
+            req.ip || '0.0.0.0'
+          );
 
           await connection.commit();
-          res.json({ success: true });
+          console.log(`[Payment] Order ${razorpay_order_id} marked PAID — payment ${razorpay_payment_id}`);
         } catch (dbErr: any) {
           await connection.rollback();
           throw dbErr;
         } finally {
           connection.release();
         }
+
+        // 7. Trigger iCarry shipment AFTER payment is confirmed (outside transaction)
+        const icarryClient = await getICarryClient();
+        if (icarryClient) {
+          const pickupId = await getSetting('icarry_pickup_address_id');
+          if (pickupId) {
+            try {
+              const items = JSON.parse(order.items);
+              const bookingResult = await icarryClient.bookShipment({
+                pickup_address_id: pickupId,
+                client_order_id: razorpay_order_id,
+                consignee: {
+                  name: order.customerName,
+                  mobile: order.phone.replace(/[^0-9]/g, '').slice(-10),
+                  address: order.address,
+                  city: order.city,
+                  pincode: order.zip,
+                  state: ICarryClient.getStateCode(order.state),
+                  country_code: 'IN'
+                },
+                parcel: {
+                  type: 'Prepaid', // Razorpay = always prepaid
+                  value: order.totalAmount,
+                  contents: items.map((i: any) => i.name).join(', ').substring(0, 255),
+                  dimensions: { length: 15, breadth: 15, height: 10, unit: 'cm' },
+                  weight: { weight: items.length * 500, unit: 'gm' }
+                }
+              });
+
+              if (bookingResult && bookingResult.shipment_id) {
+                await pool.query(
+                  "UPDATE orders SET icarry_shipment_id = ?, icarry_awb = ?, icarry_tracking_url = ?, icarry_status = ?, status = 'processing' WHERE id = ?",
+                  [bookingResult.shipment_id, bookingResult.awb, bookingResult.tracking_url, 'booked', razorpay_order_id]
+                );
+                console.log(`[iCarry] Shipment created for order ${razorpay_order_id} — AWB: ${bookingResult.awb}`);
+              }
+            } catch (icarryErr) {
+              // iCarry failure must NOT prevent order success
+              console.error('[iCarry] Shipment booking failed (order is still paid):', icarryErr);
+            }
+          } else {
+            console.warn('[iCarry] pickup_address_id not configured — skipping auto-shipment');
+          }
+        }
+
+        res.json({ success: true });
       } else {
+        console.warn(`[Payment] Signature mismatch for order ${razorpay_order_id}`);
         res.status(400).json({ success: false, error: "Invalid signature" });
       }
     } catch (e: any) {
-      console.error("Verification Error:", e);
+      console.error("[Payment] Verification Error:", e.message);
       res.status(500).json({ success: false, error: e.message });
     }
   });
