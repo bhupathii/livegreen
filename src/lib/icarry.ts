@@ -1,5 +1,15 @@
 import axios from 'axios';
 
+/**
+ * iCarry.in API Client
+ *
+ * Verified working format (from live API testing 2026-05-15):
+ * - Auth: POST /api_login with {username, key} → returns {api_token}
+ * - Token: passed as URL query param ?api_token=TOKEN on all subsequent calls
+ * - Params: bracket notation for nested objects  e.g. consignee[name], parcel[value]
+ * - Booking: POST /api_add_shipment_surface?api_token=TOKEN
+ * - Tracking: POST /api_track_shipment?api_token=TOKEN  body: {shipment_id}
+ */
 export class ICarryClient {
   private username: string;
   private key: string;
@@ -13,144 +23,222 @@ export class ICarryClient {
     this.baseUrl = baseUrl;
   }
 
-  private async login(): Promise<string> {
+  // ─── Auth ─────────────────────────────────────────────────────────────────
+
+  private async getToken(): Promise<string> {
+    // Reuse token if valid (tokens last ~60min, we refresh at 55min)
     if (this.token && Date.now() < this.tokenExpiry) {
       return this.token;
     }
 
     try {
-      const response = await axios.post(`${this.baseUrl}/api_login`, {
-        username: this.username,
-        key: this.key
-      }, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        transformRequest: [(data) => {
-          return Object.entries(data).map(([key, val]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(val))}`).join('&');
-        }]
-      });
+      const response = await axios.post(
+        `${this.baseUrl}/api_login`,
+        new URLSearchParams({ username: this.username, key: this.key }).toString(),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+      );
 
-      console.log('iCarry Login: token acquired successfully');
-
-      if (response.data && response.data.api_token) {
-        this.token = response.data.api_token;
-        this.tokenExpiry = Date.now() + 55 * 60 * 1000; // 55 minutes
+      const data = response.data;
+      if (data?.api_token) {
+        this.token = data.api_token;
+        this.tokenExpiry = Date.now() + 55 * 60 * 1000;
+        console.log('[iCarry] Token acquired successfully');
         return this.token!;
-      } else {
-        throw new Error('iCarry login failed: No token received');
       }
+      throw new Error(data?.error || 'No token in response');
     } catch (error: any) {
-      console.error('iCarry login error:', error.response?.data || error.message);
-      throw new Error('iCarry login failed');
+      const msg = error.response?.data?.error || error.message;
+      console.error('[iCarry] Login failed:', msg);
+      throw new Error(`iCarry login failed: ${msg}`);
     }
   }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /** Convert nested object to bracket-notation flat params for form-urlencoded */
+  private flattenToBrackets(obj: any, prefix = ''): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v === undefined || v === null) continue;
+      const key = prefix ? `${prefix}[${k}]` : k;
+      if (typeof v === 'object' && !Array.isArray(v)) {
+        Object.assign(result, this.flattenToBrackets(v, key));
+      } else {
+        result[key] = String(v);
+      }
+    }
+    return result;
+  }
+
+  private async post(endpoint: string, body: Record<string, any>) {
+    const token = await this.getToken();
+    const url = `${this.baseUrl}${endpoint}?api_token=${token}`;
+    const flat = this.flattenToBrackets(body);
+    const formBody = new URLSearchParams(flat).toString();
+
+    const response = await axios.post(url, formBody, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    return response.data;
+  }
+
+  // ─── Public API ───────────────────────────────────────────────────────────
 
   public async getEstimate(params: {
     origin_pincode: string;
     destination_pincode: string;
-    weight: number; // grams
-    length: number;
-    breadth: number;
-    height: number;
-    shipment_mode?: 'E' | 'S' | 'H';
-    shipment_type?: 'C' | 'P';
+    weight: number;   // grams
+    length: number;   // cm
+    breadth: number;  // cm
+    height: number;   // cm
+    shipment_mode?: 'S' | 'A';   // S=Surface, A=Air
+    shipment_type?: 'P' | 'C';   // P=Prepaid, C=COD
     shipment_value?: number;
   }) {
-    const token = await this.login();
-    const url = `${this.baseUrl}/api_get_estimate?api_token=${token}`;
-    
     try {
-      const response = await axios.post(url, {
-        ...params,
+      return await this.post('/api_get_estimate', {
+        origin_pincode: params.origin_pincode,
+        destination_pincode: params.destination_pincode,
+        weight: params.weight,
+        length: params.length,
+        breadth: params.breadth,
+        height: params.height,
         origin_country_code: 'IN',
         destination_country_code: 'IN',
         shipment_mode: params.shipment_mode || 'S',
         shipment_type: params.shipment_type || 'P',
-        shipment_value: params.shipment_value || 0
-      }, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        transformRequest: [(data) => {
-          return Object.entries(data).map(([key, val]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(val))}`).join('&');
-        }]
+        shipment_value: params.shipment_value ?? 1,
       });
-
-      return response.data;
     } catch (error: any) {
-      console.error('iCarry estimate error:', error.response?.data || error.message);
+      console.error('[iCarry] Estimate error:', error.response?.data || error.message);
       throw error;
     }
   }
 
-  public async bookShipment(params: any, mode: 'air' | 'surface' | 'hyperlocal' = 'surface') {
-    const token = await this.login();
-    let endpoint = '/api_add_shipment_surface';
-    if (mode === 'air') endpoint = '/api_add_shipment_air';
-    
-    const url = `${this.baseUrl}${endpoint}?api_token=${token}`;
+  public async bookShipment(params: {
+    pickup_address_id: string | number;
+    client_order_id: string;
+    consignee: {
+      name: string;
+      mobile: string;
+      address: string;
+      city: string;
+      pincode: string;
+      state: string;         // 2-letter state code e.g. 'MH'
+      country_code?: string; // defaults to 'IN'
+    };
+    parcel: {
+      type: 'Prepaid' | 'COD';
+      value: number;
+      contents: string;
+    };
+    measurements: {
+      weight: number;  // grams
+      length: number;  // cm
+      breadth: number; // cm
+      height: number;  // cm
+      unit?: string;   // defaults to 'cm'
+    };
+    mode?: 'surface' | 'air';
+  }) {
+    const endpoint = params.mode === 'air'
+      ? '/api_add_shipment_air'
+      : '/api_add_shipment_surface';
+
+    const body: Record<string, any> = {
+      pickup_address_id: params.pickup_address_id,
+      client_order_id: params.client_order_id,
+      consignee: {
+        name: params.consignee.name,
+        mobile: params.consignee.mobile,
+        address: params.consignee.address,
+        city: params.consignee.city,
+        pincode: params.consignee.pincode,
+        state: params.consignee.state,
+        country_code: params.consignee.country_code || 'IN',
+      },
+      parcel: {
+        type: params.parcel.type,
+        value: params.parcel.value,
+        contents: params.parcel.contents.substring(0, 255),
+      },
+      measurements: {
+        weight: params.measurements.weight,
+        length: params.measurements.length,
+        breadth: params.measurements.breadth,
+        height: params.measurements.height,
+        unit: params.measurements.unit || 'cm',
+      },
+    };
 
     try {
-      // Note: iCarry expects nested objects to be flat-key stringified for form-urlencoded
-      // e.g. consignee[name]=John
-      const flatParams = this.flattenObject(params);
-      
-      const response = await axios.post(url, flatParams, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        transformRequest: [(data) => {
-          return Object.entries(data).map(([key, val]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(val))}`).join('&');
-        }]
-      });
+      const data = await this.post(endpoint, body);
 
-      return response.data;
+      if (data?.shipment_id) {
+        return {
+          shipment_id: String(data.shipment_id),
+          awb: data.awb || null,
+          tracking_url: data.tracking_url || `https://www.icarry.in/track-shipment&awb=${data.awb}`,
+          courier_name: data.courier_name_full || data.courier_name || null,
+          pickup_scheduled: data.success || null,
+          cost_estimate: data.cost_estimate || null,
+        };
+      }
+
+      // If no shipment_id, it's an error
+      throw new Error(data?.error || 'Booking failed — no shipment_id in response');
     } catch (error: any) {
-      console.error('iCarry booking error:', error.response?.data || error.message);
+      console.error('[iCarry] Booking error:', error.response?.data || error.message);
       throw error;
     }
   }
 
   public async trackShipment(shipmentId: string) {
-    const token = await this.login();
-    // Documentation says POST to specific URL, let's use the one inferred or provided.
-    // The snippet says "POST - use shipment_id from Book response."
-    // It doesn't give a specific endpoint for tracking in the summary, but let's assume it follows the pattern.
-    // Actually, common pattern is /api_track_shipment
-    const url = `${this.baseUrl}/api_track_shipment?api_token=${token}`;
-
     try {
-      const response = await axios.post(url, { shipment_id: shipmentId }, {
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        transformRequest: [(data) => {
-          return Object.entries(data).map(([key, val]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(val))}`).join('&');
-        }]
-      });
-      return response.data;
+      const data = await this.post('/api_track_shipment', { shipment_id: shipmentId });
+
+      if (!data || data.error || data.success === 0) {
+        return { success: false, error: data?.error || 'Tracking failed' };
+      }
+
+      return {
+        success: true,
+        shipment_id: shipmentId,
+        awb: data.awb || null,
+        current_status: data.status || null,
+        location: data.location || null,
+        courier_name: data.courier_name || null,
+        tracking_url: data.tracking_url || null,
+        edd: data.edd || null,
+        picked_datetime: data.picked_datetime || null,
+        delivered_datetime: data.delivered_datetime || null,
+        // iCarry returns "details" array (not milestones)
+        milestones: (data.details || []).map((d: any) => ({
+          datetime: d.datetime,
+          location: d.location,
+          notes: d.notes,
+        })),
+      };
     } catch (error: any) {
-      console.error('iCarry tracking error:', error.response?.data || error.message);
+      console.error('[iCarry] Tracking error:', error.response?.data || error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  public async cancelShipment(shipmentId: string) {
+    try {
+      const data = await this.post('/api_cancel_shipment', { shipment_id: shipmentId });
+      return data;
+    } catch (error: any) {
+      console.error('[iCarry] Cancel error:', error.response?.data || error.message);
       throw error;
     }
   }
 
-  private flattenObject(obj: any, prefix = ''): any {
-    return Object.keys(obj).reduce((acc: any, k) => {
-      const pre = prefix.length ? prefix + '[' : '';
-      const suf = prefix.length ? ']' : '';
-      if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
-        Object.assign(acc, this.flattenObject(obj[k], pre + k + suf));
-      } else if (Array.isArray(obj[k])) {
-        obj[k].forEach((item: any, index: number) => {
-          if (typeof item === 'object') {
-            Object.assign(acc, this.flattenObject(item, `${pre}${k}${suf}[${index}]`));
-          } else {
-            acc[`${pre}${k}${suf}[${index}]`] = item;
-          }
-        });
-      } else {
-        acc[pre + k + suf] = obj[k];
-      }
-      return acc;
-    }, {});
-  }
+  // ─── State Code Helper ────────────────────────────────────────────────────
 
   public static getStateCode(stateName: string): string {
-    const states: { [key: string]: string } = {
+    const states: Record<string, string> = {
       'Andaman and Nicobar Islands': 'AN',
       'Andhra Pradesh': 'AP',
       'Arunachal Pradesh': 'AR',
@@ -159,6 +247,7 @@ export class ICarryClient {
       'Chandigarh': 'CH',
       'Chhattisgarh': 'CG',
       'Dadra and Nagar Haveli': 'DN',
+      'Dadra and Nagar Haveli and Daman and Diu': 'DH',
       'Daman and Diu': 'DD',
       'Delhi': 'DL',
       'Goa': 'GA',
@@ -187,10 +276,18 @@ export class ICarryClient {
       'Tripura': 'TR',
       'Uttar Pradesh': 'UP',
       'Uttarakhand': 'UK',
-      'West Bengal': 'WB'
+      'West Bengal': 'WB',
     };
 
     const normalized = stateName.trim();
-    return states[normalized] || states[Object.keys(states).find(k => k.toLowerCase() === normalized.toLowerCase()) || ''] || normalized.substring(0, 2).toUpperCase();
+    // Exact match
+    if (states[normalized]) return states[normalized];
+    // Case-insensitive match
+    const found = Object.keys(states).find(
+      k => k.toLowerCase() === normalized.toLowerCase()
+    );
+    if (found) return states[found];
+    // Prefix-based abbreviation fallback
+    return normalized.substring(0, 2).toUpperCase();
   }
 }

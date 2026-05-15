@@ -321,12 +321,19 @@ async function initDB() {
     ['icarry_username', process.env.ICARRY_USERNAME || ''],
     ['icarry_key', process.env.ICARRY_KEY || ''],
     ['icarry_base_url', 'https://www.icarry.in'],
-    ['icarry_pickup_address_id', ''],
+    ['icarry_pickup_address_id', process.env.ICARRY_PICKUP_ADDRESS_ID || '84128'],
     ['hf_api_key', process.env.HF_API_KEY || '']
   ];
 
   for (const [key, val] of defaultSettings) {
     await pool.query("INSERT INTO app_settings (key_name, key_value) VALUES ($1, $2) ON CONFLICT (key_name) DO NOTHING", [key, val]);
+  }
+
+  // Ensure pickup address ID is always up to date from env (won't override if already customised via admin UI)
+  // Only update if the DB value is empty
+  const [existingPickup]: any = await pool.query("SELECT key_value FROM app_settings WHERE key_name = 'icarry_pickup_address_id'");
+  if (existingPickup.length > 0 && !existingPickup[0].key_value && process.env.ICARRY_PICKUP_ADDRESS_ID) {
+    await pool.query("UPDATE app_settings SET key_value = $1 WHERE key_name = 'icarry_pickup_address_id'", [process.env.ICARRY_PICKUP_ADDRESS_ID]);
   }
 
   const [adminCnt]: any = await pool.query("SELECT count(*) as count FROM admin_users");
@@ -896,6 +903,7 @@ async function startServer() {
         const pickupId = await getSetting('icarry_pickup_address_id');
         if (pickupId) {
           try {
+            const weightGrams = Math.max(500, items.reduce((sum: number, i: any) => sum + (i.quantity || 1) * 500, 0));
             const bookingResult = await icarryClient.bookShipment({
               pickup_address_id: pickupId,
               client_order_id: id,
@@ -906,24 +914,32 @@ async function startServer() {
                 city: city,
                 pincode: zip,
                 state: ICarryClient.getStateCode(state),
-                country_code: 'IN'
               },
               parcel: {
                 type: paymentMethod === 'cod' ? 'COD' : 'Prepaid',
-                value: totalAmount,
-                contents: items.map((i: any) => i.name).join(', ').substring(0, 255),
-                dimensions: { length: 15, breadth: 15, height: 10, unit: 'cm' },
-                weight: { weight: items.length * 500, unit: 'gm' }
-              }
+                value: Math.max(1, totalAmount),
+                contents: items.map((i: any) => i.name).join(', '),
+              },
+              measurements: {
+                weight: weightGrams,
+                length: 15,
+                breadth: 15,
+                height: 10,
+              },
             });
 
-            if (bookingResult && bookingResult.shipment_id) {
-              await pool.query("UPDATE orders SET icarry_shipment_id = ?, icarry_awb = ?, icarry_tracking_url = ?, icarry_status = ? WHERE id = ?",
-                [bookingResult.shipment_id, bookingResult.awb, bookingResult.tracking_url, 'booked', id]);
+            if (bookingResult?.shipment_id) {
+              await pool.query(
+                "UPDATE orders SET icarry_shipment_id = ?, icarry_awb = ?, icarry_tracking_url = ?, icarry_status = 'booked', status = 'processing' WHERE id = ?",
+                [bookingResult.shipment_id, bookingResult.awb, bookingResult.tracking_url, id]
+              );
+              console.log(`[iCarry] COD shipment ${bookingResult.shipment_id} booked for order ${id} — AWB: ${bookingResult.awb}`);
             }
-          } catch (e) {
-            console.error("Auto-booking failed:", e);
+          } catch (e: any) {
+            console.error('[iCarry] Auto-booking failed (order still recorded):', e.message);
           }
+        } else {
+          console.warn('[iCarry] pickup_address_id not configured — skipping auto-shipment');
         }
       }
 
@@ -1130,42 +1146,51 @@ async function startServer() {
           const pickupId = await getSetting('icarry_pickup_address_id');
           if (pickupId) {
             try {
-              const items = JSON.parse(order.items);
+              const orderItems = JSON.parse(order.items);
+              const weightGrams = Math.max(500, orderItems.reduce((sum: number, i: any) => sum + (i.quantity || 1) * 500, 0));
+
               const bookingResult = await icarryClient.bookShipment({
                 pickup_address_id: pickupId,
                 client_order_id: razorpay_order_id,
                 consignee: {
                   name: order.customerName,
-                  mobile: order.phone.replace(/[^0-9]/g, '').slice(-10),
+                  mobile: (order.phone || '').replace(/[^0-9]/g, '').slice(-10),
                   address: order.address,
                   city: order.city,
                   pincode: order.zip,
                   state: ICarryClient.getStateCode(order.state),
-                  country_code: 'IN'
                 },
                 parcel: {
                   type: 'Prepaid', // Razorpay = always prepaid
-                  value: order.totalAmount,
-                  contents: items.map((i: any) => i.name).join(', ').substring(0, 255),
-                  dimensions: { length: 15, breadth: 15, height: 10, unit: 'cm' },
-                  weight: { weight: items.length * 500, unit: 'gm' }
-                }
+                  value: Math.max(1, order.totalAmount),
+                  contents: orderItems.map((i: any) => i.name).join(', '),
+                },
+                measurements: {
+                  weight: weightGrams,
+                  length: 15,
+                  breadth: 15,
+                  height: 10,
+                },
               });
 
-              if (bookingResult && bookingResult.shipment_id) {
+              if (bookingResult?.shipment_id) {
                 await pool.query(
-                  "UPDATE orders SET icarry_shipment_id = ?, icarry_awb = ?, icarry_tracking_url = ?, icarry_status = ?, status = 'processing' WHERE id = ?",
-                  [bookingResult.shipment_id, bookingResult.awb, bookingResult.tracking_url, 'booked', razorpay_order_id]
+                  "UPDATE orders SET icarry_shipment_id = ?, icarry_awb = ?, icarry_tracking_url = ?, icarry_status = 'booked', status = 'processing' WHERE id = ?",
+                  [bookingResult.shipment_id, bookingResult.awb, bookingResult.tracking_url, razorpay_order_id]
                 );
-                console.log(`[iCarry] Shipment created for order ${razorpay_order_id} — AWB: ${bookingResult.awb}`);
+                console.log(`[iCarry] Shipment ${bookingResult.shipment_id} booked for order ${razorpay_order_id} — AWB: ${bookingResult.awb} via ${bookingResult.courier_name}`);
+              } else {
+                console.error('[iCarry] Booking returned no shipment_id:', bookingResult);
               }
-            } catch (icarryErr) {
-              // iCarry failure must NOT prevent order success
-              console.error('[iCarry] Shipment booking failed (order is still paid):', icarryErr);
+            } catch (icarryErr: any) {
+              // iCarry failure must NOT roll back the payment success
+              console.error('[iCarry] Shipment booking failed (order is still paid):', icarryErr.message);
             }
           } else {
             console.warn('[iCarry] pickup_address_id not configured — skipping auto-shipment');
           }
+        } else {
+          console.warn('[iCarry] Client not initialised — ICARRY_USERNAME/ICARRY_KEY missing');
         }
 
         res.json({ success: true });
@@ -1224,7 +1249,7 @@ async function startServer() {
         if (icarryClient && row.icarry_shipment_id) {
           try {
             const realTimeTracking = await icarryClient.trackShipment(row.icarry_shipment_id);
-            if (realTimeTracking && realTimeTracking.status !== 'error') {
+            if (realTimeTracking?.success) {
               tracking = {
                 ...tracking,
                 awb: realTimeTracking.awb || tracking?.awb,
